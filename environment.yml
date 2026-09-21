@@ -1,0 +1,15 @@
+name: quivira
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - pip
+  - heyoka.py
+  - numpy
+  - scipy
+  - ipython
+  - sphinx
+  - ipykernel
+  - jupyter
+  - pip:
+      - -e .
