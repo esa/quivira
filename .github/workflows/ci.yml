@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: quivira
+          auto-update-conda: true
+          channels: conda-forge
+          channel-priority: strict
+          python-version: "3.12"
+      - name: Run tests
+        shell: bash -el {0}
+        run: bash tools/gha_unix.sh
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: quivira
+          auto-update-conda: true
+          channels: conda-forge
+          channel-priority: strict
+          python-version: "3.12"
+      - name: Run tests
+        shell: bash -el {0}
+        run: bash tools/gha_unix.sh
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: quivira
+          auto-update-conda: true
+          channels: conda-forge
+          channel-priority: strict
+          python-version: "3.12"
+      - name: Run tests
+        shell: powershell
+        run: .\tools\gha_windows.ps1
+
+  docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: quivira
+          auto-update-conda: true
+          channels: conda-forge
+          channel-priority: strict
+          python-version: "3.12"
+      - name: Build documentation
+        shell: bash -el {0}
+        run: bash tools/gha_deploydocs.sh
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: doc/_build/html
+      - uses: actions/deploy-pages@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
