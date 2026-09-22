@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title description">
+  <title id="title">Quivira</title>
+  <desc id="description">An irregular twenty-member lattice forming the letter Q</desc>
+  <defs>
+    <linearGradient id="beam" x1="20" y1="18" x2="140" y2="142" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10a58f"/>
+      <stop offset="1" stop-color="#006b5e"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="#006b5e" stroke-linecap="round" stroke-linejoin="round" stroke-width="3">
+    <path d="M48 38 79 29M79 29 108 44M108 44 119 70M119 70 106 103M106 103 73 117M73 117 39 101M39 101 31 69M31 69 48 38"/>
+    <path d="M48 38 57 55M79 29 57 55M108 44 96 61M119 70 96 61M106 103 84 94M73 117 84 94M39 101 52 84M31 69 52 84"/>
+    <path d="M57 55 96 61M96 61 84 94M84 94 52 84M52 84 57 55"/>
+  </g>
+  <circle cx="76" cy="74" r="48" fill="none" stroke="url(#beam)" stroke-width="13"/>
+  <g fill="#fff" stroke="#006b5e" stroke-width="3">
+    <circle cx="48" cy="38" r="4"/>
+    <circle cx="79" cy="29" r="4"/>
+    <circle cx="108" cy="44" r="4"/>
+    <circle cx="119" cy="70" r="4"/>
+    <circle cx="106" cy="103" r="4"/>
+    <circle cx="73" cy="117" r="4"/>
+    <circle cx="39" cy="101" r="4"/>
+    <circle cx="31" cy="69" r="4"/>
+    <circle cx="57" cy="55" r="4"/>
+    <circle cx="96" cy="61" r="4"/>
+    <circle cx="84" cy="94" r="4"/>
+    <circle cx="52" cy="84" r="4"/>
+  </g>
+  <path d="M108 108 139 139" fill="none" stroke="#e15d47" stroke-linecap="round" stroke-width="13"/>
+</svg>

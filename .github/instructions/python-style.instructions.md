@@ -13,7 +13,7 @@ Use the existing codebase of quivira as the primary style reference. Preserve it
 - Start with a concise description of the object or operation.
 - Use ordinary prose to state the mathematical formulation, physical meaning, and relevant assumptions.
 - Document public function arguments, exceptions, notes, and return values using the following section order when applicable: `Args:`, `Raises:`, `Notes:`, and `Returns:`.
-- Format each argument as `*name* (:class:`type`, optional): Description. State the default in the description.
+- Format each argument as `name (:class:`type`, optional): Description. State the default in the description. Do not add emphasis markers around the argument name; Sphinx renders it in bold automatically.
 - Format exceptions as `ExceptionType: Condition that raises the exception.`
 - Format return values as `:class:`type`: Description.`
 - Use Sphinx roles such as `:class:` and `~module.name` for documented types and project objects.
@@ -35,9 +35,9 @@ def function_name(argument, count: int = 1):
 	"""Short description of the operation.
 
 	Args:
-		*argument* (:class:`type`): Description of the argument.
+		argument (:class:`type`): Description of the argument.
 
-		*count* (:class:`int`, optional): Description. Default is 1.
+		count (:class:`int`, optional): Description. Default is 1.
 
 	Raises:
 		ValueError: Description of when the error is raised.

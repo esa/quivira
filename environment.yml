@@ -9,6 +9,11 @@ dependencies:
   - scipy
   - ipython
   - sphinx
+  - furo
+  - nbsphinx
+  - pandoc
+  - sphinx-copybutton
+  - sphinx-design
   - ipykernel
   - jupyter
   - pip:

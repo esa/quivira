@@ -1,6 +1,7 @@
 # Quivira
 
 Symbolic Lagrangian equations of motion, Taylor propagation, and arbitrary-order variational dynamics for pin-jointed lattices.
+A legendary land of wealth sought by us, the developers, explorers in modern coding "ways".
 
 ## Scope
 

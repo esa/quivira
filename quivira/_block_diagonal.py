@@ -8,7 +8,7 @@ def create_block_diagonal(blocks):
     """Create a block-diagonal matrix from square symbolic arrays.
 
     Args:
-        *blocks* (:class:`list`): A sequence of two-dimensional square arrays
+        blocks (:class:`list`): A sequence of two-dimensional square arrays
             to place along the main diagonal.
 
     Raises:
@@ -16,16 +16,18 @@ def create_block_diagonal(blocks):
 
     Notes:
         Entries outside the diagonal blocks are filled with
-        :class:`heyoka.expression` zero expressions. An empty sequence returns
-        an empty ``(0, 0)`` object array.
+        :class:`heyoka.expression` objects representing zero, rather than
+        Python integer zeros. An empty sequence returns an empty ``(0, 0)``
+        object array.
 
     Returns:
         :class:`numpy.ndarray`: An object array containing the block-diagonal
         matrix.
     """
+    zero = hy.expression(0)
     # Handle the degenerate case before computing the total matrix dimension.
     if len(blocks) == 0:
-        return np.empty((0, 0), dtype=object)
+        return np.empty((zero, zero), dtype=object)
 
     # Normalize the inputs and validate their shapes before constructing the
     # combined matrix.
@@ -39,7 +41,7 @@ def create_block_diagonal(blocks):
     # Allocate the full matrix with symbolic zeros so off-diagonal entries
     # remain compatible with heyoka expressions.
     total_dim = sum(block.shape[0] for block in block_arrays)
-    result = np.full((total_dim, total_dim), hy.expression(0), dtype=object)
+    result = np.full((total_dim, total_dim), zero, dtype=object)
 
     # Copy each block into the next diagonal slice and advance the placement
     # offset by that block's dimension.

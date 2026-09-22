@@ -8,13 +8,13 @@ def gaussian_elimination(S, b):
     """Solve a symbolic linear system with sparse-aware Gaussian elimination.
 
     Args:
-        *S* (:class:`numpy.ndarray` or sequence): A square coefficient matrix
+        S (:class:`numpy.ndarray` or sequence): A square coefficient matrix
             containing :class:`heyoka.expression` objects. The input may be a
             NumPy array, preferably with object dtype, or a nested sequence
             such as a list of lists. It is converted to a two-dimensional
             object array before the elimination is performed.
 
-        *b* (:class:`numpy.ndarray` or sequence): The right-hand side vector
+        b (:class:`numpy.ndarray` or sequence): The right-hand side vector
             containing symbolic or numeric expressions. It may have shape
             ``(dim,)``, ``(1, dim)``, or ``(dim, 1)`` and must contain exactly
             ``dim`` elements. It is converted to an object array before use.
