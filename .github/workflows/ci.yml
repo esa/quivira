@@ -85,7 +85,11 @@ jobs:
         run: bash tools/gha_deploydocs.sh
       - uses: actions/upload-pages-artifact@v3
         with:
+          # Job reruns can leave the previous attempt's default github-pages artifact behind.
+          name: github-pages-${{ github.run_attempt }}
           path: doc/_build/html
       - uses: actions/deploy-pages@v4
         id: deployment
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
