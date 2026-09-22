@@ -1,7 +1,10 @@
 # Quivira
 
 Symbolic Lagrangian equations of motion, Taylor propagation, and arbitrary-order variational dynamics for pin-jointed lattices.
+
 A legendary land of wealth sought by us, the developers, explorers in modern coding "ways".
+
+Quivira is the place of the unknown, something beyond the familiar map. Heyoka is the voice that travels toward it backwards. Together, they frame exploration not as a straight path to an answer, but as the willingness to seek differently.
 
 ## Scope
 
