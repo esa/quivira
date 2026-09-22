@@ -10,3 +10,15 @@ Quivira develops symbolic mechanical models of pin-jointed lattice structures fr
 ## Current Work
 
 The current exploratory implementation lives in [`prova.ipynb`](prova.ipynb). It uses Python together with `heyoka` and `numpy` to construct symbolic quantities and test the supporting linear-algebra operations.
+
+## Tests
+
+The test suite uses Python's standard-library `unittest` discovery. Run it from
+the `quivira` Conda environment with:
+
+```console
+conda run -n quivira python -c "import quivira; quivira.test.run_test_suite()"
+```
+
+New tests should be added to modules named `test_*.py` inside the `quivira`
+package.

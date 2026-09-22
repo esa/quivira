@@ -1,5 +1,5 @@
 ---
-description: "Use when managing virtual environments, conda environments, package installation, dependency changes, or creating new Python environments in this workspace."
+description: "Use when managing and using virtual environments, conda environments, package installation, dependency changes, or creating new Python environments in this workspace."
 ---
 
 - Use conda always, not pip
@@ -7,3 +7,5 @@ description: "Use when managing virtual environments, conda environments, packag
 - Use pip only for the quivira package installation so that its a persistent package
 - Only add packages to the environment if they are necessary for the project
 - Check that added dependencies are actually used in the project
+- use the conda environment called quivira
+- activate the conda environment before running any scripts
