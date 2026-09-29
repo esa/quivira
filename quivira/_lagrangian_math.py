@@ -40,7 +40,7 @@ def build_mass_matrix(lagrangian, qd):
 
 
 def build_Jdqd(J, q, qd):
-    r"""Return the vector ``\dot J \dot q`` from the Jacobian and state rate.
+    r"""Return the vector :math:`\dot J \dot q` from the Jacobian and state rate.
 
     The derivative of the constraint Jacobian along the trajectory is
 
@@ -55,12 +55,12 @@ def build_Jdqd(J, q, qd):
         \dot J \dot q = \sum_i \frac{\partial J}{\partial q_i} \dot q_i \dot q.
 
     Args:
-        J (:class:`numpy.ndarray` or sequence): Constraint Jacobian ``J(q)``.
+        J (:class:`numpy.ndarray` or sequence): Constraint Jacobian :math:`J(q)`.
         q (sequence): Generalized coordinates.
-        qd (sequence): Generalized velocities ``\dot q``.
+        qd (sequence): Generalized velocities :math:`\dot q`.
 
     Returns:
-        :class:`numpy.ndarray`: The vector ``\dot J \dot q``.
+        :class:`numpy.ndarray`: The vector :math:`\dot J \dot q`.
     """
     J = np.asarray(J, dtype=object)
     q = list(q)
@@ -94,7 +94,7 @@ def build_Jdqd(J, q, qd):
     return Jdqd
 
 def find_constrained_accelerations(qdd_free, J, M, Jdqd):
-    r"""Return the constrained acceleration vector from ``\dot J \dot q``.
+    r"""Return the constrained acceleration vector from :math:`\dot J \dot q`.
 
     The constrained acceleration is
 
@@ -111,9 +111,9 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd):
 
     Args:
         qdd_free (sequence): Free acceleration vector.
-        J (:class:`numpy.ndarray` or sequence): Constraint Jacobian.
-        M (:class:`numpy.ndarray` or sequence): Mass matrix.
-        Jdqd (sequence): Product ``\dot J \dot q``.
+        J (:class:`numpy.ndarray` or sequence): Constraint Jacobian :math:`J`.
+        M (:class:`numpy.ndarray` or sequence): Mass matrix :math:`M`.
+        Jdqd (sequence): Product :math:`\dot J \dot q`.
 
     Returns:
         :class:`numpy.ndarray`: Constrained acceleration vector.
@@ -139,15 +139,15 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd):
     return qdd
 
 def build_constraint_jacobian(F, q):
-    r"""Return the constraint Jacobian ``J = \partial F / \partial q``.
+    r"""Return the constraint Jacobian :math:`J = \partial F / \partial q`.
 
-    The algebraic constraints are expressed as a vector ``F(q) = 0``. The
+    The algebraic constraints are expressed as a vector :math:`F(q) = 0`. The
     Jacobian maps coordinate perturbations into constraint-space variations and
     is used to enforce the acceleration-level constraint
-    ``J \ddot{q} + \dot{J} \dot{q} = 0``.
+    :math:`J \ddot{q} + \dot{J} \dot{q} = 0`.
 
     Args:
-        F (sequence): Constraint residuals ``F(q)``.
+        F (sequence): Constraint residuals :math:`F(q)`.
         q (sequence): Generalized coordinates.
 
     Returns:
@@ -170,7 +170,7 @@ def build_ode_equations_of_motion(lagrangian, F, q, qd):
 
     Args:
         lagrangian (:class:`heyoka.expression`): Scalar Lagrangian.
-        F (sequence): Constraint residuals ``F(q)``.
+        F (sequence): Constraint residuals :math:`F(q)`.
         q (sequence): Generalized coordinates.
         qd (sequence): Generalized velocities.
 
