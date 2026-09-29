@@ -2,10 +2,12 @@ import quivira as qv
 import heyoka as hy
 
 def mass_matrix(lagrangian, qdot):
-    """Return the symbolic mass matrix for a Lagrangian.
+    r"""Return the symbolic mass matrix for a Lagrangian.
 
     The mass matrix is defined by
+
     .. math::
+
         M_{ij} = \frac{\partial^2 \mathcal L}{\partial \dot q_i \partial \dot q_j}.
 
     Args:

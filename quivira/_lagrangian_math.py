@@ -12,7 +12,9 @@ def build_mass_matrix(lagrangian, qd):
     r"""Return the symbolic mass matrix for a Lagrangian.
 
     The mass matrix is defined by
+
     .. math::
+
         M_{ij} = \frac{\partial^2 \mathcal L}{\partial \dot q_i \partial \dot q_j}.
 
     Args:
@@ -41,11 +43,15 @@ def build_Jdqd(J, q, qd):
     r"""Return the vector ``\dot J \dot q`` from the Jacobian and state rate.
 
     The derivative of the constraint Jacobian along the trajectory is
+
     .. math::
+
         \dot J = \sum_i \frac{\partial J}{\partial q_i} \dot q_i,
 
     so the product entering the constrained-acceleration equation is
+
     .. math::
+
         \dot J \dot q = \sum_i \frac{\partial J}{\partial q_i} \dot q_i \dot q.
 
     Args:
@@ -90,13 +96,17 @@ def build_Jdqd(J, q, qd):
 def find_constrained_accelerations(qdd_free, J, M, Jdqd):
     r"""Return the constrained acceleration vector from ``\dot J \dot q``.
 
-    The derivation in the notes gives
+    The constrained acceleration is
+
     .. math::
+
         \ddot{q} = \ddot{q}_{\mathrm{free}} - M^{-1} J^T W^{-1}
         \left(J \ddot{q}_{\mathrm{free}} + \dot{J} \dot{q}\right),
 
-    with
+    where
+
     .. math::
+
         W = J M^{-1} J^T.
 
     Args:
