@@ -86,10 +86,28 @@ Local consistency within quivira takes precedence over generic Python, documenta
 
 ## Generic coding philosophy
 
+The first rule is: Write like a human and for human readability, only disobey this rule when there is a clear computational advantage, but then state this in a comment above the line.
+Do not add too many blank lines.
 Before writing a line ask yourself:
-- Is this line necessary, or can it be simplified?
+- Is this line necessary?
 - Does this line follow the established style and conventions within quivira?
-- Is there a clearer or more efficient way to achieve the same result?
+- Is there a clearer or comutationally more efficient way to achieve the same result?
 - Does this line maintain readability and understandability for future maintainers?
 - Is this not defensive coding?
 - Is this not over-engineering?
+- Am I writing like a human and for human readability, not like a machine? Example: Keep for loops simple, with the code contained in it after it, never put a for loop on the end of the line
+
+## Mandatory readability rules
+
+- Prefer explicit loops over compact one-line comprehensions when the loop body is not trivially obvious.
+- Do not hide algorithmic structure inside a one-line return expression.
+- Keep control flow readable and scan-friendly; do not pack loops, conditionals, or matrix assembly into a single expression.
+- Put docstrings immediately under public functions, classes, and modules.
+- Preserve the mathematical structure of the implementation; do not compress symbolic derivations into dense expressions when a short block is clearer.
+- If a short expression is less readable than a loop, prefer the readable version.
+
+## Anti-patterns to avoid
+
+- Avoid returning a list comprehension that assembles a matrix in one dense expression when a short loop is clearer.
+- Avoid `return [ ... for ... ]` for symbolic derivations that are easier to inspect by row.
+- Avoid terse comments in place of docstrings.

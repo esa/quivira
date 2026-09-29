@@ -21,6 +21,13 @@ to the API reference for the available building blocks.
       Build a symbolic block system, solve it, and compile the result with
       heyoka.
 
+   .. grid-item-card:: Constrained double pendulum
+      :link: notebooks/double_pendulum
+      :link-type: doc
+
+      Assemble constrained equations of motion from a Lagrangian and simulate
+      the resulting double-pendulum dynamics.
+
    .. grid-item-card:: API reference
       :link: api
       :link-type: doc
@@ -32,4 +39,5 @@ to the API reference for the available building blocks.
    :maxdepth: 2
 
    notebooks/getting_started
+   notebooks/double_pendulum
    api
