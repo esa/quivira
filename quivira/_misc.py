@@ -21,16 +21,21 @@ def identity(x):
 
 
 def invert_matrix(matrix):
-    """Return the inverse of a square matrix using Gaussian elimination.
+    r"""Return the inverse of a square matrix using Gaussian elimination.
 
     The inverse is defined by
+
     .. math::
+
         A A^{-1} = I,
 
     where :math:`I` is the identity matrix. The implementation solves the
     linear systems
+
     .. math::
+
         A x_j = e_j
+
     for each basis vector :math:`e_j` and stores the resulting columns in the
     inverse matrix.
 

@@ -18,7 +18,7 @@ Use the existing codebase of quivira as the primary style reference. Preserve it
 - Format return values as `:class:`type`: Description.`
 - Use Sphinx roles such as `:class:` and `~module.name` for documented types and project objects.
 - Use single backticks for short code identifiers and double backticks for longer inline code, vector layouts, and expressions, for example ``[x, y, z, vx, vy, vz]``.
-- For displayed mathematical equations in docstrings, use the Sphinx `.. math::` directive with the equation indented by four spaces. Use `:math:` for inline expressions.
+- For displayed mathematical equations in docstrings, use the Sphinx `.. math::` directive with a blank line before the directive, a blank line after it, and the equation indented by four spaces. Leave a blank line after the equation before any following prose or section. Use `:math:` for inline expressions.
 - When documenting a mathematical model, introduce the equations with a short sentence, then define symbols and conventions in bullet points, including state ordering, parameter ordering, units, and reference frames when relevant.
 - Preserve LaTeX structure inside `.. math::` blocks, including aligned systems, cases, matrices, and line breaks. Escape backslashes correctly in Python docstrings.
 - Use mathematical notation where it makes a scientific definition clearer.
