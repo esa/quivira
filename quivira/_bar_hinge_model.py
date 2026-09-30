@@ -1,6 +1,7 @@
 """Generic bar-hinge model data container."""
 
 import heyoka as hy
+import quivira as qv
 
 class bar_hinge_model:
     """Store bar lengths, masses, and initial conditions.
@@ -108,6 +109,3 @@ class bar_hinge_model:
 
     def build_constraint_jacobian(self, point_pairs):
         return 0
-        
-        
-
