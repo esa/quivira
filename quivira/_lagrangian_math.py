@@ -94,7 +94,7 @@ def build_Jdqd(J, q, qd):
     return Jdqd
 
 def find_constrained_accelerations(qdd_free, J, M, Jdqd):
-    r"""Return the constrained acceleration vector from :math:`\dot J \dot q`.
+    r"""Return constrained accelerations and the constraint multipliers.
 
     The constrained acceleration is
 
@@ -116,7 +116,9 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd):
         Jdqd (sequence): Product :math:`\dot J \dot q`.
 
     Returns:
-        :class:`numpy.ndarray`: Constrained acceleration vector.
+        :class:`tuple`: A pair containing the constrained acceleration vector
+        and the Lagrange multiplier vector, in the same order as the constraint
+        residuals in :math:`F`.
     """
     J = np.asarray(J, dtype=object)
     M = np.asarray(M, dtype=object)
@@ -136,7 +138,7 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd):
     correction = M_inv @ JT @ lambda_mult
     qdd = qdd_free + correction
 
-    return qdd
+    return qdd, lambda_mult
 
 def build_constraint_jacobian(F, q):
     r"""Return the constraint Jacobian :math:`J = \partial F / \partial q`.
@@ -160,7 +162,7 @@ def build_constraint_jacobian(F, q):
     return J
 
 
-def build_ode_equations_of_motion(lagrangian, F, q, qd):
+def build_ode_equations_of_motion(lagrangian, F, q, qd, *, return_multipliers=False):
     r"""Assemble the first-order ODE system for the constrained dynamics.
 
     This helper forms the free-acceleration terms from the Lagrangian,
@@ -173,9 +175,14 @@ def build_ode_equations_of_motion(lagrangian, F, q, qd):
         F (sequence): Constraint residuals :math:`F(q)`.
         q (sequence): Generalized coordinates.
         qd (sequence): Generalized velocities.
+        return_multipliers (:class:`bool`, optional): Whether to also return
+            the symbolic Lagrange multipliers. Default is False.
 
     Returns:
-        list: Pairs ``(state_var, rhs_expr)`` suitable for a Heyoka ODE system.
+        :class:`list` or :class:`tuple`: The ODE system as pairs
+        ``(state_var, rhs_expr)``. If ``return_multipliers`` is True, returns a
+        pair containing the ODE system and the multiplier vector, ordered as
+        the constraint residuals in :math:`F`.
     """
     # Heyoka returns the Euler-Lagrange equations as ordered pairs of the form
     # (state_variable, rhs_expression). Keep only the entries for the velocity
@@ -194,7 +201,7 @@ def build_ode_equations_of_motion(lagrangian, F, q, qd):
     Jdqd = build_Jdqd(J, q, qd)
 
     # Enforce the algebraic constraints by projecting the free acceleration onto the constraint-consistent subspace.
-    qdd = find_constrained_accelerations(qdd_free, J, M, Jdqd)
+    qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd)
 
     # Turn the second-order system into the first-order form expected by the integrator: qdot = v and vdot = qdd.
     ode_system = []
@@ -202,6 +209,9 @@ def build_ode_equations_of_motion(lagrangian, F, q, qd):
         ode_system.append((coord, vel))
     for vel, acc in zip(qd, qdd):
         ode_system.append((vel, acc))
+
+    if return_multipliers:
+        return ode_system, lambda_mult
 
     return ode_system
 
