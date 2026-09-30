@@ -75,13 +75,17 @@ class LagrangianMathTests(_ut.TestCase):
         M = np.array([[2.0, 0.0], [0.0, 3.0]], dtype=object)
         Jdqd = np.array([1.0], dtype=object)
 
-        constrained = qv.find_constrained_accelerations(qdd_free, J, M, Jdqd)
+        constrained, multipliers = qv.find_constrained_accelerations(qdd_free, J, M, Jdqd)
         expected = np.array([-1.8, 0.8], dtype=object)
+        expected_multipliers = np.array([-9.6], dtype=object)
 
         self.assertEqual(constrained.shape, expected.shape)
+        self.assertEqual(multipliers.shape, expected_multipliers.shape)
         for idx in range(2):
             residual = float(sp.N(hy.to_sympy(constrained[idx] - expected[idx])))
             self.assertAlmostEqual(residual, 0.0, places=12)
+        multiplier_residual = float(sp.N(hy.to_sympy(multipliers[0] - expected_multipliers[0])))
+        self.assertAlmostEqual(multiplier_residual, 0.0, places=12)
 
     def test_build_constraint_jacobian(self):
         """Return the Jacobian of the algebraic constraints with respect to the coordinates.
@@ -127,7 +131,18 @@ class LagrangianMathTests(_ut.TestCase):
         computed = qv.build_ode_equations_of_motion(lagrangian, F, q, qd)
         expected = [(q0, v0), (q1, v1), (v0, 0.0), (v1, 0.0)]
 
+        self.assertIsInstance(computed, list)
         self.assertEqual(len(computed), len(expected))
         for (lhs_actual, rhs_actual), (lhs_expected, rhs_expected) in zip(computed, expected):
             self.assertEqual(sp.simplify(hy.to_sympy(lhs_actual - lhs_expected)), 0)
             self.assertEqual(sp.simplify(hy.to_sympy(rhs_actual - rhs_expected)), 0)
+
+        computed_with_multipliers, multipliers = qv.build_ode_equations_of_motion(
+            lagrangian, F, q, qd, return_multipliers=True
+        )
+        self.assertEqual(len(computed_with_multipliers), len(expected))
+        self.assertEqual(multipliers.shape, (1,))
+        for (lhs_actual, rhs_actual), (lhs_expected, rhs_expected) in zip(computed_with_multipliers, expected):
+            self.assertEqual(sp.simplify(hy.to_sympy(lhs_actual - lhs_expected)), 0)
+            self.assertEqual(sp.simplify(hy.to_sympy(rhs_actual - rhs_expected)), 0)
+        self.assertEqual(sp.simplify(hy.to_sympy(multipliers[0])), 0)
