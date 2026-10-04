@@ -354,5 +354,257 @@ Hence, the constrained acceleration is
 }
 \end{equation}
 
+\section{Adding nonconservative forces}
+
+The preceding derivation assumes that all applied forces are conservative and
+therefore represented by the Lagrangian
+\[
+\mathcal L(\bm q,\dot{\bm q}) = T(\bm q,\dot{\bm q}) - V(\bm q).
+\]
+In practice, a system may also be subject to forces and torques which cannot,
+or should not, be represented through a scalar potential. Examples include
+viscous damping, dry friction, actuator forces, thruster forces, aerodynamic
+loads, prescribed motor torques, and control inputs.
+
+Such loads enter the equations of motion through the
+Lagrange-d'Alembert principle. Let
+\[
+\bm Q_{\mathrm{nc}}(\bm q,\dot{\bm q},t)
+\in \mathbb R^N
+\]
+denote the vector of generalized nonconservative forces. The virtual work of
+all nonconservative loads must be expressible as
+\begin{equation}
+\boxed{
+\delta W_{\mathrm{nc}}
+=
+\bm Q_{\mathrm{nc}}(\bm q,\dot{\bm q},t)^{\mathsf T}
+\delta\bm q.
+}
+\label{eq:virtual_work_generalized}
+\end{equation}
+Equation~\eqref{eq:virtual_work_generalized} is the defining requirement for
+the generalized load vector. In particular, its $i$th component is the force
+which is virtual-work conjugate to the generalized coordinate $q_i$:
+\[
+\delta W_{\mathrm{nc}}
+=
+\sum_{i=1}^{N}
+Q_{\mathrm{nc},i}\,\delta q_i.
+\]
+Thus, if $q_i$ is translational, $Q_{\mathrm{nc},i}$ has units of force; if
+$q_i$ is an angle, $Q_{\mathrm{nc},i}$ has units of torque.
+
+The Lagrange--d'Alembert principle for the constrained system is
+\begin{equation}
+\delta \widetilde S
++
+\int_0^T
+\delta W_{\mathrm{nc}}\,dt
+=
+0,
+\end{equation}
+where
+\[
+\widetilde S
+=
+\int_0^T
+\left[
+\mathcal L(\bm q,\dot{\bm q})
++
+\bm\lambda^{\mathsf T}\bm F(\bm q)
+\right]dt.
+\]
+Following the same integration-by-parts argument as before gives
+\begin{equation}
+\boxed{
+\left\{
+\begin{array}{l}
+\displaystyle
+\frac{d}{dt}
+\left(
+\frac{\partial\mathcal L}{\partial\dot{\bm q}}
+\right)
+-
+\frac{\partial\mathcal L}{\partial\bm q}
+=
+\bm Q_{\mathrm{nc}}
++
+\bm J(\bm q)^{\mathsf T}\bm\lambda
+\\[1.2em]
+\bm F(\bm q)=\bm 0.
+\end{array}
+\right.
+}
+\label{eq:constrained_lagrange_dalembert}
+\end{equation}
+The nonconservative generalized forces are therefore added directly to the
+right-hand side of the Euler--Lagrange equations, whereas
+$\bm J^{\mathsf T}\bm\lambda$ remains the generalized constraint reaction.
+
+Using the definitions introduced previously,
+\[
+\bm M\ddot{\bm q}
++
+\bm C\dot{\bm q}
+-
+\bm B
+=
+\bm Q_{\mathrm{nc}}
++
+\bm J^{\mathsf T}\bm\lambda,
+\]
+or equivalently,
+\begin{equation}
+\bm M\ddot{\bm q}
+=
+\bm f_{\mathrm{nc}}
++
+\bm J^{\mathsf T}\bm\lambda,
+\qquad
+\bm f_{\mathrm{nc}}
+\triangleq
+\bm B
+-
+\bm C\dot{\bm q}
++
+\bm Q_{\mathrm{nc}}.
+\label{eq:forced_mass_matrix_form}
+\end{equation}
+The saddle-point system becomes
+\begin{equation}
+\boxed{
+\left[
+\begin{array}{cc}
+\bm M & -\bm J^{\mathsf T} \\
+\bm J & \bm 0
+\end{array}
+\right]
+\left[
+\begin{array}{c}
+\ddot{\bm q} \\
+\bm\lambda
+\end{array}
+\right]
+=
+\left[
+\begin{array}{c}
+\bm B-\bm C\dot{\bm q}+\bm Q_{\mathrm{nc}} \\
+-\dot{\bm J}\dot{\bm q}
+\end{array}
+\right].
+}
+\label{eq:forced_saddle_system}
+\end{equation}
+
+Accordingly, the free acceleration---that is, the acceleration in the
+absence of constraint reactions but including nonconservative applied
+loads---is
+\begin{equation}
+\ddot{\bm q}_{\mathrm{free}}
+\triangleq
+\bm M^{-1}\bm f_{\mathrm{nc}}
+=
+\bm M^{-1}
+\left(
+\bm B-\bm C\dot{\bm q}+\bm Q_{\mathrm{nc}}
+\right).
+\label{eq:forced_free_acceleration}
+\end{equation}
+The expressions for the Lagrange multipliers and the constrained
+acceleration retain exactly the same form
+\subsection{Generalized forces induced by physical forces and torques}
+
+A user may directly provide
+\[
+\bm Q_{\mathrm{nc}}(\bm q,\dot{\bm q},t),
+\]
+provided that it satisfies the virtual-work relation
+in~\eqref{eq:virtual_work_generalized}. This is the most general and
+minimal interface.
+However, physical loads are usually specified as forces acting at points and
+torques acting on rigid bodies. Let a force $\bm f_P$ be applied at a point
+$P$, whose inertial position is
+\[
+\bm r_P=\bm r_P(\bm q).
+\]
+Its virtual displacement is
+\[
+\delta\bm r_P
+=
+\frac{\partial\bm r_P}{\partial\bm q}\delta\bm q.
+\]
+Define the point-position Jacobian
+\begin{equation}
+\bm J_{r,P}(\bm q)
+\triangleq
+\frac{\partial\bm r_P}{\partial\bm q}
+\in\mathbb R^{3\times N}.
+\end{equation}
+The virtual work done by the applied force is
+\begin{equation}
+\delta W_{\bm f_P}
+=
+\bm f_P^{\mathsf T}\delta\bm r_P
+=
+\bm f_P^{\mathsf T}
+\bm J_{r,P}\delta\bm q
+=
+\left(
+\bm J_{r,P}^{\mathsf T}\bm f_P
+\right)^{\mathsf T}
+\delta\bm q.
+\end{equation}
+Therefore, the generalized force induced by a physical force applied at $P$
+is
+\begin{equation}
+\boxed{
+\bm Q_{\bm f_P}
+=
+\bm J_{r,P}^{\mathsf T}\bm f_P.
+}
+\label{eq:generalized_force_from_force}
+\end{equation}
+Similarly, let a pure torque, or free couple, $\bm \tau_B$ be applied to a
+rigid body $B$. Let $\bm\omega_B$ denote the angular velocity of the body,
+and define the angular-velocity Jacobian by
+\begin{equation}
+\bm\omega_B
+=
+\bm J_{\omega,B}(\bm q)\dot{\bm q},
+\qquad
+\bm J_{\omega,B}(\bm q)
+\in\mathbb R^{3\times N}.
+\end{equation}
+The corresponding virtual rotation is
+\[
+\delta\bm\theta_B
+=
+\bm J_{\omega,B}\delta\bm q.
+\]
+The virtual work of the applied torque is consequently
+\begin{equation}
+\delta W_{\bm\tau_B}
+=
+\bm\tau_B^{\mathsf T}\delta\bm\theta_B
+=
+\bm\tau_B^{\mathsf T}
+\bm J_{\omega,B}\delta\bm q
+=
+\left(
+\bm J_{\omega,B}^{\mathsf T}\bm\tau_B
+\right)^{\mathsf T}
+\delta\bm q.
+\end{equation}
+The induced generalized force is therefore
+\begin{equation}
+\boxed{
+\bm Q_{\bm\tau_B}
+=
+\bm J_{\omega,B}^{\mathsf T}\bm\tau_B.
+}
+\label{eq:generalized_force_from_torque}
+\end{equation}
+
 \end{document}
 

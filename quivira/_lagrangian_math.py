@@ -4,8 +4,7 @@ import numpy as np
 import heyoka as hy
 from scipy.differentiate import jacobian
 
-from ._gaussian_elimination import gaussian_elimination
-from ._misc import invert_matrix
+from ._linear_algebra import gaussian_elimination, invert_matrix
 
 
 def build_mass_matrix(lagrangian, qd):
@@ -162,7 +161,7 @@ def build_constraint_jacobian(F, q):
     return J
 
 
-def build_ode_equations_of_motion(lagrangian, F, q, qd, *, return_multipliers=False):
+def lagrange_eom(lagrangian, F, q, qd, *, return_multipliers=False):
     r"""Assemble the first-order ODE system for the constrained dynamics.
 
     This helper forms the free-acceleration terms from the Lagrangian,
