@@ -68,5 +68,13 @@ napoleon_numpy_docstring = False
 nbsphinx_execute = "auto"
 nbsphinx_allow_errors = False
 
+mathjax3_config = {
+    "tex": {
+        "macros": {
+            "bm": [r"\boldsymbol{#1}", 1],
+        },
+    },
+}
+
 copybutton_prompt_text = r">>> |\.\.\. "
 copybutton_prompt_is_regexp = True

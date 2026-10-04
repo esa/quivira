@@ -1,5 +1,5 @@
-API reference
-=============
+API
+===
 
 The public Quivira interface provides symbolic matrix utilities and helpers
 for assembling constrained Lagrangian equations of motion. These functions
@@ -26,4 +26,4 @@ Constrained Lagrangian mechanics
 
 .. autofunction:: find_constrained_accelerations
 
-.. autofunction:: build_ode_equations_of_motion
+.. autofunction:: lagrange_eom

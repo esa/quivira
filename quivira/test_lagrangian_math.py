@@ -109,7 +109,7 @@ class LagrangianMathTests(_ut.TestCase):
                 simplified = sp.simplify(hy.to_sympy(computed[row, col] - expected[row, col]))
                 self.assertEqual(simplified, 0)
 
-    def test_build_ode_equations_of_motion(self):
+    def test_lagrange_eom(self):
         """Assemble the first-order ODE system from the unconstrained Lagrangian and constraints.
 
         The expected value is built by evaluating the Lagrangian with
@@ -128,7 +128,7 @@ class LagrangianMathTests(_ut.TestCase):
         lagrangian = 0.5 * (v0**2 + v1**2)
         F = [q0 + q1]
 
-        computed = qv.build_ode_equations_of_motion(lagrangian, F, q, qd)
+        computed = qv.lagrange_eom(lagrangian, F, q, qd)
         expected = [(q0, v0), (q1, v1), (v0, 0.0), (v1, 0.0)]
 
         self.assertIsInstance(computed, list)
@@ -137,7 +137,7 @@ class LagrangianMathTests(_ut.TestCase):
             self.assertEqual(sp.simplify(hy.to_sympy(lhs_actual - lhs_expected)), 0)
             self.assertEqual(sp.simplify(hy.to_sympy(rhs_actual - rhs_expected)), 0)
 
-        computed_with_multipliers, multipliers = qv.build_ode_equations_of_motion(
+        computed_with_multipliers, multipliers = qv.lagrange_eom(
             lagrangian, F, q, qd, return_multipliers=True
         )
         self.assertEqual(len(computed_with_multipliers), len(expected))
