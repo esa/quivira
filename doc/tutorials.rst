@@ -13,6 +13,7 @@ Basic
 
    notebooks/getting_started
    notebooks/double_pendulum
+   notebooks/scissor_mechanism
    notebooks/spinning_top
 
 Advanced
