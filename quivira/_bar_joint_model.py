@@ -276,7 +276,7 @@ class bar_joint_model:
 
             thetad0 (:class:`float`): Initial angular velocity.
         """
-        self.bars[bar_index].set_init_bar_velocities(self, xd0, yd0, thetad0)
+        self.bars[bar_index].set_init_bar_velocities(xd0, yd0, thetad0)
 
     def add_bar_at_attitude(self, x0, y0, theta0, length, mass):
         """Append a bar and assign its initial attitude in one step.
@@ -366,47 +366,84 @@ class bar_joint_model:
         """
         self.external_forces.append(external_force(bar_index, s, fx, fy))
 
-    def build_lagrange_eom(self):
+    def build_lagrange_eom(self, return_multipliers=False):
         """Assemble the symbolic equations of motion for the model.
 
+        Args:
+            return_multipliers (:class:`bool`, optional): Whether to also return
+                the symbolic Lagrange multipliers. Default is False.
+
         Returns:
-            tuple: The Lagrange equations returned by ``quivira.lagrange_eom``
-            with multipliers enabled.
+            :class:`list` or :class:`tuple`: The ODE system as pairs
+            ``(state_var, rhs_expr)``. If ``return_multipliers`` is True, returns
+            a pair containing the ODE system and the Lagrange multiplier vector,
+            ordered according to the constraint residuals in ``self.F``.
         """
         self._build_state_variables()
         self._build_lagrangian()
         self._build_constraints()
         self._build_external_forces()
-        return qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, return_multipliers=True)
+        return qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, return_multipliers=return_multipliers)
 
-    def set_initial_state(self, initial_states):
-        """Set initial bar positions and orientations from a list of states.
+    def set_initial_state(self, initial_state):
+        """Set the initial bar poses and velocities from a flattened state vector.
 
         Args:
-            initial_states (:class:`list`): Sequence of ``[x0, y0, theta0]``
-                entries for each bar.
+            initial_state (:class:`list` or :class:`numpy.ndarray`): State vector
+                in the same order as :meth:`get_initial_state`, where all
+                generalized coordinates are listed first and all generalized
+                velocities follow.
 
         Raises:
-            ValueError: Raised when the number of states does not match the number
-                of bars or when a state is not length three.
+            ValueError: Raised when the state length does not match the number of
+                bars or when an individual bar state is malformed.
 
         Returns:
             list: The stacked initial generalized coordinates and velocities.
         """
-        if len(initial_states) != len(self.bars):
-            raise ValueError(f"Expected initial states for {len(self.bars)} bars, got {len(initial_states)}")
+        flat_state = np.asarray(initial_state, dtype=float).ravel()
 
-        for i, state in enumerate(initial_states):
-            if len(state) != 3:raise ValueError(f"Initial state for bar {i} must contain [x0, y0, theta0]")
+        if flat_state.size == 6 * len(self.bars):
+            q_size = 3 * len(self.bars)
+            for i in range(len(self.bars)):
+                q_offset = 3 * i
+                qd_offset = q_size + 3 * i
 
-            x0, y0, theta0 = state
+                x0, y0, theta0 = flat_state[q_offset : q_offset + 3]
+                xd0, yd0, thetad0 = flat_state[qd_offset : qd_offset + 3]
 
-            self.bars[i].x0 = float(x0)
-            self.bars[i].y0 = float(y0)
-            self.bars[i].theta0 = float(theta0)
+                self.bars[i].x0 = float(x0)
+                self.bars[i].y0 = float(y0)
+                self.bars[i].theta0 = float(theta0)
+                self.bars[i].xd0 = float(xd0)
+                self.bars[i].yd0 = float(yd0)
+                self.bars[i].thetad0 = float(thetad0)
+            self.check_constraint_fulfillment(self.get_initial_state())
+            return
 
-        self._check_initial_states_against_constraints()
-        return self.get_initial_state()
+        if len(initial_state) == len(self.bars):
+            for i, state in enumerate(initial_state):
+                state_array = np.asarray(state, dtype=float).ravel()
+                if state_array.size != 6:
+                    raise ValueError(
+                        f"Initial state for bar {i} must contain [x0, y0, theta0, xd0, yd0, thetad0]"
+                    )
+
+                x0, y0, theta0, xd0, yd0, thetad0 = state_array
+
+                self.bars[i].x0 = float(x0)
+                self.bars[i].y0 = float(y0)
+                self.bars[i].theta0 = float(theta0)
+                self.bars[i].xd0 = float(xd0)
+                self.bars[i].yd0 = float(yd0)
+                self.bars[i].thetad0 = float(thetad0)
+
+            self.check_constraint_fulfillment(self.get_initial_state())
+            return
+
+        raise ValueError(
+            f"Expected state length {6 * len(self.bars)}, got {len(initial_state)}"
+        )
 
     def get_initial_state(self):
         """Return the stacked initial generalized coordinates and velocities.
@@ -425,16 +462,10 @@ class bar_joint_model:
         return q0 + qd0
 
     def check_constraint_fulfillment(self, state):
-        """Validate that a state satisfies the model's joints and supports.
-
-        Args:
-            state (:class:`list`): Full state vector for the bars.
-
-        Raises:
-            ValueError: Raised when a joint or support constraint is violated.
-        """
         if len(state) != 6 * len(self.bars):
             raise ValueError(f"Expected state of length {6 * len(self.bars)}, got {len(state)}")
+
+        n = len(self.bars)
 
         # Check joints
         for joint_index, joint in enumerate(self.joints):
@@ -443,21 +474,45 @@ class bar_joint_model:
 
             ref_x, ref_y = self._current_point_on_bar_from_state(state, ref_bar, ref_s)
 
+            ref_theta = state[3 * ref_bar + 2]
+            ref_xd, ref_yd, ref_thetad = state[3 * n + 3 * ref_bar : 3 * n + 3 * ref_bar + 3]
+            ref_vx = ref_xd - ref_s * self.bars[ref_bar].length * np.sin(ref_theta) * ref_thetad
+            ref_vy = ref_yd + ref_s * self.bars[ref_bar].length * np.cos(ref_theta) * ref_thetad
+
             for bar_index, s in zip(joint.bar_index[1:], joint.s[1:]):
                 px, py = self._current_point_on_bar_from_state(state, bar_index, s)
+
+                theta = state[3 * bar_index + 2]
+                xd, yd, thetad = state[3 * n + 3 * bar_index : 3 * n + 3 * bar_index + 3]
+                vx = xd - s * self.bars[bar_index].length * np.sin(theta) * thetad
+                vy = yd + s * self.bars[bar_index].length * np.cos(theta) * thetad
 
                 if abs(px - ref_x) > self.tolerance or abs(py - ref_y) > self.tolerance:
                     raise ValueError(f"State violates joint {joint_index}: bar {bar_index} does not coincide with bar {ref_bar}")
 
+                if abs(vx - ref_vx) > self.tolerance or abs(vy - ref_vy) > self.tolerance:
+                    raise ValueError(f"State violates velocity constraint at joint {joint_index}: bar {bar_index} does not move with bar {ref_bar}")
+
         # Check supports
         for support_index, support in enumerate(self.supports):
             px, py = self._current_point_on_bar_from_state(state, support.bar_index, support.s)
+
+            theta = state[3 * support.bar_index + 2]
+            xd, yd, thetad = state[3 * n + 3 * support.bar_index : 3 * n + 3 * support.bar_index + 3]
+            vx = xd - support.s * self.bars[support.bar_index].length * np.sin(theta) * thetad
+            vy = yd + support.s * self.bars[support.bar_index].length * np.cos(theta) * thetad
 
             if not support.dof_in_x and abs(px - support.x) > self.tolerance:
                 raise ValueError(f"State violates support {support_index} in x: got {px}, expected {support.x}")
 
             if not support.dof_in_y and abs(py - support.y) > self.tolerance:
                 raise ValueError(f"State violates support {support_index} in y: got {py}, expected {support.y}")
+
+            if not support.dof_in_x and abs(vx) > self.tolerance:
+                raise ValueError(f"State violates velocity constraint at support {support_index} in x: got {vx}, expected 0")
+
+            if not support.dof_in_y and abs(vy) > self.tolerance:
+                raise ValueError(f"State violates velocity constraint at support {support_index} in y: got {vy}, expected 0")
 
     def print_model(self):
         """Print a human-readable summary of the assembled model."""
