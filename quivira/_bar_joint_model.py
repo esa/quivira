@@ -1,8 +1,20 @@
+"""Bar-and-joint model for constrained rigid-link systems.
+
+This module stores a compact set of bars, joints, supports, and point loads for
+forming symbolic Lagrange equations of motion in a quivira model.
+"""
+
 import numpy as np
 import heyoka as hy
 import quivira as qv
 
 class bar:
+    """Rigid bar segment with mass, geometric length, and initial pose.
+
+    The bar stores the center position, orientation, and inertial properties that
+    are used to assemble the generalized coordinates of the model.
+    """
+
     x0 = float
     y0 = float
     theta0 = float
@@ -11,15 +23,40 @@ class bar:
     inertia = float
 
     def __init__(self, length, mass):
+        """Initialize the bar geometry and inertial properties.
+
+        Args:
+            length (:class:`float`): Bar length.
+
+            mass (:class:`float`): Bar mass.
+        """
         self.x0 = None
         self.y0 = None
         self.theta0 = None
+        self.xd0 = 0
+        self.yd0 = 0
+        self.thetad0 = 0
         self.length = length
         self.mass = mass
         self.inertia = self.mass * self.length**2 / 12.0
 
     @classmethod
     def from_point_pair(cls, start, end, mass_per_length=1.0):
+        """Construct a bar from two endpoints.
+
+        Args:
+            start (:class:`tuple`): Cartesian coordinates ``(x, y)`` of the first
+                end.
+
+            end (:class:`tuple`): Cartesian coordinates ``(x, y)`` of the second
+                end.
+
+            mass_per_length (:class:`float`, optional): Mass per unit length.
+                Default is 1.0.
+
+        Returns:
+            :class:`bar`: New bar positioned between the endpoints.
+        """
         start_x, start_y = start
         end_x, end_y = end
 
@@ -31,21 +68,60 @@ class bar:
         y0 = (start_y + end_y) / 2.0
 
         new_bar = cls(length, mass)
-        new_bar.position_bar(x0, y0, theta0)
+        new_bar.set_init_bar_attitude(x0, y0, theta0)
 
         return new_bar
 
-    def position_bar(self, x0, y0, theta0):
+    def set_init_bar_attitude(self, x0, y0, theta0):
+        """Set the initial center position and angle of the bar.
+
+        Args:
+            x0 (:class:`float`): Initial center x coordinate.
+
+            y0 (:class:`float`): Initial center y coordinate.
+
+            theta0 (:class:`float`): Initial orientation angle.
+        """
         self.x0 = x0
         self.y0 = y0
         self.theta0 = theta0
 
+    def set_init_bar_velocities(self, xd0, yd0, thetad0):
+        """Set the initial translational and angular velocities of the bar.
+
+        Args:
+            xd0 (:class:`float`): Initial x velocity of the center.
+
+            yd0 (:class:`float`): Initial y velocity of the center.
+
+            thetad0 (:class:`float`): Initial angular velocity.
+        """
+        self.xd0 = xd0
+        self.yd0 = yd0
+        self.thetad0 = thetad0
+
 class joint:
+    """Constraint tying multiple points on different bars to a common location.
+
+    The joint stores the list of bars and local coordinates that must coincide in
+    space at the same time instance.
+    """
     # u, v, are symbolic expressions for the point on the bar in local coordinates
     bar_index = []
     s = []
 
     def __init__(self, bar_index, s):
+        """Initialize a joint constraint between multiple bar points.
+
+        Args:
+            bar_index (:class:`list`): Indices of the bars in the joint.
+
+            s (:class:`list`): Local coordinates on each bar that must coincide.
+
+        Raises:
+            ValueError: Raised when the arrays do not have the same length or
+                when fewer than two bars are given.
+        """
         if len(bar_index) != len(s):
             raise ValueError("bar_index and s must have the same length")
 
@@ -56,6 +132,11 @@ class joint:
         self.s = s
 
 class support:
+    """Support condition constraining the motion of a point on a bar.
+
+    A support can fix translation along the x and/or y directions while leaving the
+    remaining kinematic degrees of freedom free.
+    """
     # u, v, are symbolic expressions for the point on the bar in local coordinates
     bar_index = int
     s = float
@@ -65,6 +146,23 @@ class support:
     dof_in_y = bool
 
     def __init__(self, bar_index, s, x, y, dof_in_x=False, dof_in_y=False):
+        """Initialize a support constraint.
+
+        Args:
+            bar_index (:class:`int`): Index of the constrained bar.
+
+            s (:class:`float`): Local coordinate of the constrained point.
+
+            x (:class:`float`): Target x position for the support.
+
+            y (:class:`float`): Target y position for the support.
+
+            dof_in_x (:class:`bool`, optional): If ``True``, x motion is free.
+                Default is ``False``.
+
+            dof_in_y (:class:`bool`, optional): If ``True``, y motion is free.
+                Default is ``False``.
+        """
         self.bar_index = bar_index
         self.s = s
         self.x = x
@@ -73,23 +171,48 @@ class support:
         self.dof_in_y = dof_in_y
 
 class external_force:
+    """External point force applied to a bar at a local coordinate."""
     bar_index = int
     s = float
     fx = float
     fy = float
 
     def __init__(self, bar_index, s, fx, fy):
+        """Initialize an external force applied at a point on a bar.
+
+        Args:
+            bar_index (:class:`int`): Index of the bar receiving the force.
+
+            s (:class:`float`): Local coordinate of the application point.
+
+            fx (:class:`float`): Force component along the x axis.
+
+            fy (:class:`float`): Force component along the y axis.
+        """
         self.bar_index = bar_index
         self.s = s
         self.fx = fx
         self.fy = fy
 
 class bar_joint_model:
+    """Assembly of articulated bars with joints, supports, and external loads.
+
+    The model collects the geometric and force data needed to generate a
+    Lagrangian formulation and the constraint equations for the system.
+    """
+
     def __init__(self, tolerance = 1e-10):
+        """Initialize the model and reset the internal state.
+
+        Args:
+            tolerance (:class:`float`, optional): Numerical tolerance used when
+                checking constraint satisfaction. Default is ``1e-10``.
+        """
         self.tolerance = tolerance 
         self.clear()
 
     def clear(self):
+        """Remove all bars, joints, supports, and forces from the model."""
         self.g = 0.0
         self.bars = []
         self.joints = []
@@ -101,15 +224,14 @@ class bar_joint_model:
 
         self.lagrangian = None
         self.F = np.asarray([], dtype=object)
-        self.state0 = []
-
-        self.ode_system = None
-        self.lambda_expr = None
-        self.ta = None # Taylor adaptive integrator
-
-        self.solution = None
 
     def set_g(self, g):
+        """Set the gravitational acceleration for the model.
+
+        Args:
+            g (:class:`float`): Gravitational acceleration in the global y
+                direction.
+        """
         self.g = float(g)
 
     # def build_from_point_pairs(self, point_pairs):
@@ -119,22 +241,109 @@ class bar_joint_model:
     #         self.add_bar_from_point_pair(start, end)
 
     def add_bar(self, length, mass):
+        """Append a new bar to the assembly.
+
+        Args:
+            length (:class:`float`): Bar length.
+
+            mass (:class:`float`): Bar mass.
+        """
         self.bars.append(bar(length, mass))
 
-    def position_bar(self, bar_index, x0, y0, theta0):
-        self.bars[bar_index].position_bar(x0, y0, theta0)
+    def set_init_bar_attitude(self, bar_index, x0, y0, theta0):
+        """Set the initial center position and orientation of a bar.
+
+        Args:
+            bar_index (:class:`int`): Index of the target bar.
+
+            x0 (:class:`float`): Initial x coordinate of the bar center.
+
+            y0 (:class:`float`): Initial y coordinate of the bar center.
+
+            theta0 (:class:`float`): Initial angle of the bar.
+        """
+        self.bars[bar_index].set_init_bar_attitude(x0, y0, theta0)
+
+    def set_init_bar_velocities(self, bar_index, xd0, yd0, thetad0):
+        """Set the initial translational and angular velocities of a bar.
+
+        Args:
+            bar_index (:class:`int`): Index of the target bar.
+
+            xd0 (:class:`float`): Initial x velocity of the center.
+
+            yd0 (:class:`float`): Initial y velocity of the center.
+
+            thetad0 (:class:`float`): Initial angular velocity.
+        """
+        self.bars[bar_index].set_init_bar_velocities(self, xd0, yd0, thetad0)
 
     def add_bar_at_attitude(self, x0, y0, theta0, length, mass):
+        """Append a bar and assign its initial attitude in one step.
+
+        Args:
+            x0 (:class:`float`): Initial x coordinate of the bar center.
+
+            y0 (:class:`float`): Initial y coordinate of the bar center.
+
+            theta0 (:class:`float`): Initial angle of the bar.
+
+            length (:class:`float`): Bar length.
+
+            mass (:class:`float`): Bar mass.
+        """
         self.add_bar(length, mass)
-        self.position_bar(-1, x0, y0, theta0)
+        self.set_init_bar_attitude(-1, x0, y0, theta0)
 
     def add_bar_from_point_pair(self, start, end, mass_per_length=1.0):
+        """Append a bar constructed from its endpoints.
+
+        Args:
+            start (:class:`tuple`): Cartesian coordinates ``(x, y)`` of the first
+                end.
+
+            end (:class:`tuple`): Cartesian coordinates ``(x, y)`` of the second
+                end.
+
+            mass_per_length (:class:`float`, optional): Distributed mass per unit
+                length. Default is 1.0.
+        """
         self.bars.append(bar.from_point_pair(start, end, mass_per_length))
 
     def add_joint(self, bar_index, s):
+        """Add a joint linking selected points across bars.
+
+        Args:
+            bar_index (:class:`list`): Indices of the bars participating in the
+                joint.
+
+            s (:class:`list`): Local coordinates of the coincident points on each
+                bar.
+        """
         self.joints.append(joint(bar_index, s))
 
     def add_support(self, bar_index, s, dof_in_x, dof_in_y, x=None, y=None):
+        """Add a support constraint on a point of a bar.
+
+        Args:
+            bar_index (:class:`int`): Index of the constrained bar.
+
+            s (:class:`float`): Local coordinate of the constrained point.
+
+            dof_in_x (:class:`bool`): If ``True``, x motion is unconstrained.
+
+            dof_in_y (:class:`bool`): If ``True``, y motion is unconstrained.
+
+            x (:class:`float`, optional): Support x position. If omitted, the
+                initial bar position is used. Default is ``None``.
+
+            y (:class:`float`, optional): Support y position. If omitted, the
+                initial bar position is used. Default is ``None``.
+
+        Raises:
+            ValueError: Raised if the support position is requested before the bar
+                has an initial state.
+        """
         if x == None or y == None:
             if self.bars[bar_index].x0 == None or self.bars[bar_index].y0 == None:
                 raise ValueError("Bar " + str(bar_index) + " does not have an initial state yet, can't set support")
@@ -144,17 +353,46 @@ class bar_joint_model:
         self.supports.append(support(bar_index, s, x, y, dof_in_x, dof_in_y))
 
     def add_external_force(self, bar_index, s, fx, fy):
+        """Add a point load on a bar.
+
+        Args:
+            bar_index (:class:`int`): Index of the bar receiving the force.
+
+            s (:class:`float`): Local coordinate of the force application point.
+
+            fx (:class:`float`): Force component along the x axis.
+
+            fy (:class:`float`): Force component along the y axis.
+        """
         self.external_forces.append(external_force(bar_index, s, fx, fy))
 
-    def build_eom_integrator(self):
+    def build_lagrange_eom(self):
+        """Assemble the symbolic equations of motion for the model.
+
+        Returns:
+            tuple: The Lagrange equations returned by ``quivira.lagrange_eom``
+            with multipliers enabled.
+        """
         self._build_state_variables()
         self._build_lagrangian()
         self._build_constraints()
         self._build_external_forces()
-        self.ode_system, self.lambda_expr = qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, return_multipliers=True)
-        self.ta = hy.taylor_adaptive(self.ode_system)
+        return qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, return_multipliers=True)
 
     def set_initial_state(self, initial_states):
+        """Set initial bar positions and orientations from a list of states.
+
+        Args:
+            initial_states (:class:`list`): Sequence of ``[x0, y0, theta0]``
+                entries for each bar.
+
+        Raises:
+            ValueError: Raised when the number of states does not match the number
+                of bars or when a state is not length three.
+
+        Returns:
+            list: The stacked initial generalized coordinates and velocities.
+        """
         if len(initial_states) != len(self.bars):
             raise ValueError(f"Expected initial states for {len(self.bars)} bars, got {len(initial_states)}")
 
@@ -168,14 +406,96 @@ class bar_joint_model:
             self.bars[i].theta0 = float(theta0)
 
         self._check_initial_states_against_constraints()
-        self._apply_initial_state()
+        return self.get_initial_state()
 
-    def integrate(self, no_steps, end_time, start_time = 0.0):
-        self.ta.state[:] = self.state0
-        self.ta.time = start_time
-        tgrid = np.linspace(start_time, end_time, no_steps)
-        self.solution = self.ta.propagate_grid(tgrid)[-1]
-        return self.solution
+    def get_initial_state(self):
+        """Return the stacked initial generalized coordinates and velocities.
+
+        Returns:
+            list: State vector containing ``[x0, y0, theta0, xd0, yd0, thetad0]``
+            for each bar.
+        """
+        q0 = []
+        for bar in self.bars:
+            q0.extend([bar.x0, bar.y0, bar.theta0])
+
+        qd0 = []
+        for bar in self.bars:
+            qd0.extend([bar.xd0, bar.yd0, bar.thetad0])
+        return q0 + qd0
+
+    def check_constraint_fulfillment(self, state):
+        """Validate that a state satisfies the model's joints and supports.
+
+        Args:
+            state (:class:`list`): Full state vector for the bars.
+
+        Raises:
+            ValueError: Raised when a joint or support constraint is violated.
+        """
+        if len(state) != 6 * len(self.bars):
+            raise ValueError(f"Expected state of length {6 * len(self.bars)}, got {len(state)}")
+
+        # Check joints
+        for joint_index, joint in enumerate(self.joints):
+            ref_bar = joint.bar_index[0]
+            ref_s = joint.s[0]
+
+            ref_x, ref_y = self._current_point_on_bar_from_state(state, ref_bar, ref_s)
+
+            for bar_index, s in zip(joint.bar_index[1:], joint.s[1:]):
+                px, py = self._current_point_on_bar_from_state(state, bar_index, s)
+
+                if abs(px - ref_x) > self.tolerance or abs(py - ref_y) > self.tolerance:
+                    raise ValueError(f"State violates joint {joint_index}: bar {bar_index} does not coincide with bar {ref_bar}")
+
+        # Check supports
+        for support_index, support in enumerate(self.supports):
+            px, py = self._current_point_on_bar_from_state(state, support.bar_index, support.s)
+
+            if not support.dof_in_x and abs(px - support.x) > self.tolerance:
+                raise ValueError(f"State violates support {support_index} in x: got {px}, expected {support.x}")
+
+            if not support.dof_in_y and abs(py - support.y) > self.tolerance:
+                raise ValueError(f"State violates support {support_index} in y: got {py}, expected {support.y}")
+
+    def print_model(self):
+        """Print a human-readable summary of the assembled model."""
+        print("Bars:")
+        for i, bar in enumerate(self.bars):
+            print(f"  Bar {i}: length={bar.length}, mass={bar.mass}")
+
+        print("\nJoints:")
+        if len(self.joints) == 0:
+            print("  None")
+        else:
+            for i, joint in enumerate(self.joints):
+                connections = [f"bar {bar_index} at s={s}" for bar_index, s in zip(joint.bar_index, joint.s)]
+                print(f"  Joint {i}: " + ", ".join(connections))
+
+        print("\nSupports:")
+        if len(self.supports) == 0:
+            print("  None")
+        else:
+            for i, support in enumerate(self.supports):
+                print(
+                    f"  Support {i}: "
+                    f"bar {support.bar_index} at s={support.s}, "
+                    f"position=({support.x}, {support.y}), "
+                    f"dof_in_x={support.dof_in_x}, "
+                    f"dof_in_y={support.dof_in_y}"
+                )
+
+        print("\nInitial state:")
+        for i, bar in enumerate(self.bars):
+            if bar.x0 is None or bar.y0 is None or bar.theta0 is None:
+                print(f"  Bar {i}: Not set")
+            else:
+                print(
+                    f"  Bar {i}: "
+                    f"x={bar.x0}, y={bar.y0}, theta={bar.theta0}, "
+                    f"xd={bar.xd0}, yd={bar.yd0}, thetad={bar.thetad0}"
+                )
         
     def _build_state_variables(self):
         q_names = []
@@ -215,6 +535,15 @@ class bar_joint_model:
         bar = self.bars[bar_index]
         px = bar.x0 + s * bar.length * np.cos(bar.theta0)
         py = bar.y0 + s * bar.length * np.sin(bar.theta0)
+        return px, py
+
+    def _current_point_on_bar_from_state(self, state, bar_index, s):
+        bar = self.bars[bar_index]
+        x, y, theta = state[3 * bar_index : 3 * bar_index + 3]
+
+        px = x + s * bar.length * np.cos(theta)
+        py = y + s * bar.length * np.sin(theta)
+
         return px, py
 
     def _build_constraints(self):
@@ -266,35 +595,3 @@ class bar_joint_model:
             )
 
         self.external_forces_expr = np.asarray(Q, dtype=object)
-
-    def _check_initial_states_against_constraints(self):
-        # Check joints
-        for joint_index, joint in enumerate(self.joints):
-            ref_bar = joint.bar_index[0]
-            ref_s = joint.s[0]
-
-            ref_x, ref_y = self._initial_point_on_bar(ref_bar,ref_s)
-
-            for bar_index, s in zip(joint.bar_index[1:],joint.s[1:]):
-                px, py = self._initial_point_on_bar(bar_index,s)
-
-                if (abs(px - ref_x) > self.tolerance or abs(py - ref_y) > self.tolerance):
-                    raise ValueError(f"Initial state violates joint {joint_index}: bar {bar_index} does not coincide with bar {ref_bar}")
-
-        # Check supports
-        for support_index, support in enumerate(self.supports):
-            px, py = self._initial_point_on_bar(support.bar_index, support.s)
-
-            if (not support.dof_in_x and abs(px - support.x) > self.tolerance):
-                raise ValueError(f"Initial state violates support {support_index} in x: got {px}, expected {support.x}")
-
-            if (not support.dof_in_y and abs(py - support.y) > self.tolerance):
-                raise ValueError(f"Initial state violates support {support_index} in y: got {py}, expected {support.y}")
-
-    def _apply_initial_state(self):
-        q0 = []
-        for bar in self.bars:
-            q0.extend([bar.x0, bar.y0, bar.theta0])
-
-        qd0 = [0.0] * len(self.qd)
-        self.state0 = q0 + qd0

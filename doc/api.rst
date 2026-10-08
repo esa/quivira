@@ -27,3 +27,11 @@ Constrained Lagrangian mechanics
 .. autofunction:: find_constrained_accelerations
 
 .. autofunction:: lagrange_eom
+
+Bar joint model class
+---------------------
+
+.. autoclass:: bar_joint_model
+   :members:
+   :undoc-members: false
+   :show-inheritance:

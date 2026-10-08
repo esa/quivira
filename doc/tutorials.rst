@@ -13,10 +13,13 @@ Basic
 
    notebooks/getting_started
    notebooks/double_pendulum
-   notebooks/scissor_mechanism
    notebooks/spinning_top
 
 Advanced
 --------
 
-Advanced tutorials will be added here.
+.. toctree::
+   :maxdepth: 1
+   :titlesonly:
+   
+   notebooks/scissor_mechanism
