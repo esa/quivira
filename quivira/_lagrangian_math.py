@@ -92,7 +92,7 @@ def build_Jdqd(J, q, qd):
 
     return Jdqd
 
-def find_constrained_accelerations(qdd_free, J, M, Jdqd):
+def find_constrained_accelerations(qdd_free, J, M, Jdqd, return_W=False):
     r"""Return constrained accelerations and the constraint multipliers.
 
     The constrained acceleration is
@@ -113,11 +113,15 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd):
         J (:class:`numpy.ndarray` or sequence): Constraint Jacobian :math:`J`.
         M (:class:`numpy.ndarray` or sequence): Mass matrix :math:`M`.
         Jdqd (sequence): Product :math:`\dot J \dot q`.
+        return_W (:class:`bool`, optional): Whether to also return the Delassus
+            matrix :math:`W`. Default is False.
 
     Returns:
-        :class:`tuple`: A pair containing the constrained acceleration vector
-        and the Lagrange multiplier vector, in the same order as the constraint
-        residuals in :math:`F`.
+        :class:`tuple`: By default, a pair ``(qdd, lambda_mult)`` containing the
+        constrained acceleration vector and Lagrange multiplier vector. If
+        ``return_W`` is True, a triple ``(qdd, lambda_mult, W)`` is returned;
+        :math:`W = J M^{-1} J^T` is the Delassus matrix. The multiplier entries
+        follow the constraint-row ordering in :math:`J`.
     """
     J = np.asarray(J, dtype=object)
     M = np.asarray(M, dtype=object)
@@ -136,6 +140,9 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd):
     lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
     correction = M_inv @ JT @ lambda_mult
     qdd = qdd_free + correction
+
+    if return_W:
+        return qdd, lambda_mult, W
 
     return qdd, lambda_mult
 
@@ -161,7 +168,7 @@ def build_constraint_jacobian(F, q):
     return J
 
 
-def lagrange_eom(lagrangian, F, q, qd, *, return_multipliers=False):
+def lagrange_eom(lagrangian, F, q, qd, *, return_multipliers=False, return_W=False):
     r"""Assemble the first-order ODE system for the constrained dynamics.
 
     This helper forms the free-acceleration terms from the Lagrangian,
@@ -175,13 +182,18 @@ def lagrange_eom(lagrangian, F, q, qd, *, return_multipliers=False):
         q (sequence): Generalized coordinates.
         qd (sequence): Generalized velocities.
         return_multipliers (:class:`bool`, optional): Whether to also return
-            the symbolic Lagrange multipliers. Default is False.
+            the Lagrange multiplier vector. Default is False.
+        return_W (:class:`bool`, optional): Whether to also return the Delassus
+            matrix :math:`W = J M^{-1} J^T`. Default is False.
 
     Returns:
         :class:`list` or :class:`tuple`: The ODE system as pairs
-        ``(state_var, rhs_expr)``. If ``return_multipliers`` is True, returns a
-        pair containing the ODE system and the multiplier vector, ordered as
-        the constraint residuals in :math:`F`.
+        ``(state_var, rhs_expr)``. If both options are False, this list is
+        returned directly. If only ``return_multipliers`` is True, returns
+        ``(ode_system, lambda_mult)``; if only ``return_W`` is True, returns
+        ``(ode_system, W)``; if both are True, returns
+        ``(ode_system, lambda_mult, W)``. The multiplier entries follow the
+        constraint-row ordering in :math:`J`.
     """
     # Heyoka returns the Euler-Lagrange equations as ordered pairs of the form
     # (state_variable, rhs_expression). Keep only the entries for the velocity
@@ -200,7 +212,12 @@ def lagrange_eom(lagrangian, F, q, qd, *, return_multipliers=False):
     Jdqd = build_Jdqd(J, q, qd)
 
     # Enforce the algebraic constraints by projecting the free acceleration onto the constraint-consistent subspace.
-    qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd)
+    if return_W:
+        qdd, lambda_mult, W = find_constrained_accelerations(
+            qdd_free, J, M, Jdqd, return_W=True
+        )
+    else:
+        qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd)
 
     # Turn the second-order system into the first-order form expected by the integrator: qdot = v and vdot = qdd.
     ode_system = []
@@ -210,9 +227,12 @@ def lagrange_eom(lagrangian, F, q, qd, *, return_multipliers=False):
         ode_system.append((vel, acc))
 
     if return_multipliers:
+        if return_W:
+            return ode_system, lambda_mult, W
         return ode_system, lambda_mult
+    if return_W:
+        return ode_system, W
 
     return ode_system
-
 
 
