@@ -87,6 +87,17 @@ class LagrangianMathTests(_ut.TestCase):
         multiplier_residual = float(sp.N(hy.to_sympy(multipliers[0] - expected_multipliers[0])))
         self.assertAlmostEqual(multiplier_residual, 0.0, places=12)
 
+        constrained, multipliers, W = qv.find_constrained_accelerations(
+            qdd_free, J, M, Jdqd, return_W=True
+        )
+        self.assertEqual(W.shape, (1, 1))
+        self.assertAlmostEqual(float(sp.N(hy.to_sympy(W[0, 0]))), 5.0 / 6.0, places=12)
+        for idx in range(2):
+            residual = float(sp.N(hy.to_sympy(constrained[idx] - expected[idx])))
+            self.assertAlmostEqual(residual, 0.0, places=12)
+        multiplier_residual = float(sp.N(hy.to_sympy(multipliers[0] - expected_multipliers[0])))
+        self.assertAlmostEqual(multiplier_residual, 0.0, places=12)
+
     def test_build_constraint_jacobian(self):
         """Return the Jacobian of the algebraic constraints with respect to the coordinates.
 
@@ -146,3 +157,16 @@ class LagrangianMathTests(_ut.TestCase):
             self.assertEqual(sp.simplify(hy.to_sympy(lhs_actual - lhs_expected)), 0)
             self.assertEqual(sp.simplify(hy.to_sympy(rhs_actual - rhs_expected)), 0)
         self.assertEqual(sp.simplify(hy.to_sympy(multipliers[0])), 0)
+
+        computed_with_W, W = qv.lagrange_eom(lagrangian, F, q, qd, return_W=True)
+        self.assertEqual(len(computed_with_W), len(expected))
+        self.assertEqual(W.shape, (1, 1))
+        self.assertAlmostEqual(float(sp.N(hy.to_sympy(W[0, 0]))), 2.0, places=12)
+
+        computed_with_both, multipliers, W = qv.lagrange_eom(
+            lagrangian, F, q, qd, return_multipliers=True, return_W=True
+        )
+        self.assertEqual(len(computed_with_both), len(expected))
+        self.assertEqual(multipliers.shape, (1,))
+        self.assertEqual(W.shape, (1, 1))
+        self.assertAlmostEqual(float(sp.N(hy.to_sympy(W[0, 0]))), 2.0, places=12)

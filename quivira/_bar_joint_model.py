@@ -366,24 +366,40 @@ class bar_joint_model:
         """
         self.external_forces.append(external_force(bar_index, s, fx, fy))
 
-    def build_lagrange_eom(self, return_multipliers=False):
+    def build_lagrange_eom(self, return_multipliers=False, return_W=False):
         """Assemble the symbolic equations of motion for the model.
 
-        Args:
-            return_multipliers (:class:`bool`, optional): Whether to also return
-                the symbolic Lagrange multipliers. Default is False.
+            This method builds the system-level Lagrangian, constraint residuals, and
+            external-force terms, then returns the equivalent symbolic first-order
+            ODE system for numerical integration. When ``return_multipliers`` or
+            ``return_W`` is enabled, the corresponding constraint quantities are
+            included in the return value.
 
-        Returns:
-            :class:`list` or :class:`tuple`: The ODE system as pairs
-            ``(state_var, rhs_expr)``. If ``return_multipliers`` is True, returns
-            a pair containing the ODE system and the Lagrange multiplier vector,
-            ordered according to the constraint residuals in ``self.F``.
-        """
+            Args:
+                return_multipliers (:class:`bool`, optional): If ``True``, also
+                    return the symbolic Lagrange multiplier vector associated with
+                    the algebraic constraints. Default is ``False``.
+
+                return_W (:class:`bool`, optional): If ``True``, also return the
+                    Delassus matrix :math:`W = J M^{-1} J^T`, where ``J`` is the
+                    constraint Jacobian and ``M`` is the mass matrix. Default is
+                    ``False``.
+
+            Returns:
+                :class:`list` or :class:`tuple`: The ODE system as pairs
+                ``(state_var, rhs_expr)``. If neither option is enabled, the
+                function returns the ODE system directly. If
+                ``return_multipliers`` is ``True``, it returns
+                ``(ode_system, lambda_mult)``; if ``return_W`` is ``True``, it
+                returns ``(ode_system, W)``; and if both are ``True``, it returns
+                ``(ode_system, lambda_mult, W)``. The multiplier entries follow the
+                ordering of the constraint residuals in ``self.F``.
+            """
         self._build_state_variables()
         self._build_lagrangian()
         self._build_constraints()
         self._build_external_forces()
-        return qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, return_multipliers=return_multipliers)
+        return qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, return_multipliers=return_multipliers, return_W=return_W)
 
     def set_initial_state(self, initial_state):
         """Set the initial bar poses and velocities from a flattened state vector.
