@@ -176,8 +176,9 @@ class external_force:
     s = float
     fx = float
     fy = float
+    torque = float
 
-    def __init__(self, bar_index, s, fx, fy):
+    def __init__(self, bar_index, s, fx, fy, torque = 0):
         """Initialize an external force applied at a point on a bar.
 
         Args:
@@ -193,6 +194,7 @@ class external_force:
         self.s = s
         self.fx = fx
         self.fy = fy
+        self.torque = torque
 
 class bar_joint_model:
     """Assembly of articulated bars with joints, supports, and external loads.
@@ -224,6 +226,7 @@ class bar_joint_model:
 
         self.lagrangian = None
         self.F = np.asarray([], dtype=object)
+        self.Q_nc = np.asarray([], dtype=object)
 
     def set_g(self, g):
         """Set the gravitational acceleration for the model.
@@ -322,6 +325,167 @@ class bar_joint_model:
         """
         self.joints.append(joint(bar_index, s))
 
+    def infer_joints(self):
+        """Infer joints from intersections of bars in their initial poses.
+
+        Detects intersections anywhere along the bars, groups bars meeting
+        at the same point, and avoids duplicate joints.
+
+        Returns:
+            int: Total number of joints after inference.
+        """
+        tol = self.tolerance
+
+        def cross2(a, b):
+            # Calculate the 2D cross product of vectors a and b.
+            # It is zero when the vectors are parallel and is used below to calculate the intersection of two lines.
+            return a[0] * b[1] - a[1] * b[0]
+
+        # Calculate the start and end of each bar.
+        segments = []
+
+        for i, b in enumerate(self.bars):
+            # We require initial positions of bars to infer the joints
+            if any(v is None for v in (b.x0, b.y0, b.theta0)):
+                raise ValueError(f"Bar {i} has no initial attitude, cannot infer joints")
+
+            # Check the stored bar length.
+            length = b.length
+            if not np.isfinite(length) or length <= tol:
+                raise ValueError(f"Bar {i} has invalid or zero length")
+
+            # Calculate the start point and direction vector.
+            start = np.asarray(self._initial_point_on_bar(i, -0.5), dtype=float)
+            direction = length * np.array([
+                np.cos(b.theta0),
+                np.sin(b.theta0),
+            ])
+
+            segments.append((start, direction, length))
+
+        # Each group represents one joint location.
+        # "members" maps bar indices to local s coordinates.
+        groups = []
+
+        def register(point, members):
+            matches = [
+                k for k, group in enumerate(groups)
+                if np.linalg.norm(group["point"] - point) <= tol
+            ]
+
+            if matches:
+                group = groups[matches[0]]
+
+                # Merge existing groups at this location.
+                for k in reversed(matches[1:]):
+                    other = groups.pop(k)
+                    members.extend(other["members"].items())
+            else:
+                group = {"point": point, "members": {}}
+                groups.append(group)
+
+            for i, s in members:
+                previous = group["members"].get(i)
+
+                if previous is not None:
+                    if abs(previous - s) * self.bars[i].length > tol:
+                        raise ValueError(
+                            f"Conflicting joint positions on bar {i}"
+                        )
+
+                group["members"][i] = s
+
+        # Include manually added joints to avoid duplicates.
+        for old in self.joints:
+            point = np.asarray(
+                self._initial_point_on_bar(
+                    old.bar_index[0], old.s[0]
+                ),
+                dtype=float,
+            )
+            register(point, list(zip(old.bar_index, old.s)))
+
+        # Check every unique pair of bars.
+        for i in range(len(segments)):
+            p, r, length_i = segments[i]
+
+            for j in range(i + 1, len(segments)):
+                q, v, length_j = segments[j]
+
+                delta = q - p
+                denominator = cross2(r, v)
+
+                if abs(denominator) <= tol * length_i * length_j:
+                    # Parallel bars: check whether they are collinear.
+                    if abs(cross2(delta, r)) > tol * length_i:
+                        continue
+
+                    t0 = np.dot(delta, r) / length_i**2
+                    t1 = t0 + np.dot(v, r) / length_i**2
+
+                    lo = max(0.0, min(t0, t1))
+                    hi = min(1.0, max(t0, t1))
+
+                    if hi < lo - tol / length_i:
+                        continue
+
+                    if (hi - lo) * length_i > tol:
+                        raise ValueError(
+                            f"Bars {i} and {j} overlap along a segment; "
+                            "a unique joint location cannot be inferred"
+                        )
+
+                    # Collinear bars touching at one endpoint.
+                    t = np.clip(0.5 * (lo + hi), 0.0, 1.0)
+                    point = p + t * r
+                    u = np.dot(point - q, v) / length_j**2
+
+                    if not -tol / length_j <= u <= 1 + tol / length_j:
+                        continue
+
+                    u = np.clip(u, 0.0, 1.0)
+
+                else:
+                    # Intersection of the two infinite lines.
+                    t = cross2(delta, v) / denominator
+                    u = cross2(delta, r) / denominator
+
+                    # Intersection must lie on both finite segments.
+                    if not (
+                        -tol / length_i <= t <= 1 + tol / length_i
+                        and -tol / length_j <= u <= 1 + tol / length_j
+                    ):
+                        continue
+
+                    t = np.clip(t, 0.0, 1.0)
+                    u = np.clip(u, 0.0, 1.0)
+
+                    point_i = p + t * r
+                    point_j = q + u * v
+
+                    if np.linalg.norm(point_i - point_j) > tol:
+                        continue
+
+                    point = 0.5 * (point_i + point_j)
+
+                # Convert endpoint-based parameters to COM-based s.
+                register(
+                    point,
+                    [(i, float(t - 0.5)), (j, float(u - 0.5))]
+                )
+
+        # Rebuild the joints, with one joint per location.
+        self.joints = []
+
+        for group in groups:
+            self.add_joint(
+                list(group["members"]),
+                list(group["members"].values()),
+            )
+
+        return len(self.joints)
+
+
     def add_support(self, bar_index, s, dof_in_x, dof_in_y, x=None, y=None):
         """Add a support constraint on a point of a bar.
 
@@ -352,7 +516,7 @@ class bar_joint_model:
 
         self.supports.append(support(bar_index, s, x, y, dof_in_x, dof_in_y))
 
-    def add_external_force(self, bar_index, s, fx, fy):
+    def add_external_force(self, bar_index, s, fx, fy, torque=0.0):
         """Add a point load on a bar.
 
         Args:
@@ -360,11 +524,13 @@ class bar_joint_model:
 
             s (:class:`float`): Local coordinate of the force application point.
 
-            fx (:class:`float`): Force component along the x axis.
+            fx (:class:`float`): Force component along the global x axis.
 
-            fy (:class:`float`): Force component along the y axis.
+            fy (:class:`float`): Force component along the global y axis.
+
+            torque (:class:`float`): Torque mathematically positive
         """
-        self.external_forces.append(external_force(bar_index, s, fx, fy))
+        self.external_forces.append(external_force(bar_index, s, fx, fy, torque))
 
     def build_lagrange_eom(self, return_multipliers=False, return_W=False):
         """Assemble the symbolic equations of motion for the model.
@@ -399,7 +565,7 @@ class bar_joint_model:
         self._build_lagrangian()
         self._build_constraints()
         self._build_external_forces()
-        return qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, return_multipliers=return_multipliers, return_W=return_W)
+        return qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, self.Q_nc, return_multipliers=return_multipliers, return_W=return_W)
 
     def set_initial_state(self, initial_state):
         """Set the initial bar poses and velocities from a flattened state vector.
@@ -645,7 +811,7 @@ class bar_joint_model:
         self.F = np.asarray(constraints, dtype=object)
 
     def _build_external_forces(self):
-        Q = [0.0] * len(self.q)
+        Q_nc = [0.0] * len(self.q)
 
         for force in self.external_forces:
             i = force.bar_index
@@ -657,12 +823,13 @@ class bar_joint_model:
             fx = force.fx
             fy = force.fy
 
-            Q[3 * i] += fx
-            Q[3 * i + 1] += fy
+            Q_nc[3 * i] += fx
+            Q_nc[3 * i + 1] += fy
 
-            Q[3 * i + 2] += (
+            Q_nc[3 * i + 2] += (
                 -s * bar.length * hy.sin(theta) * fx
                 + s * bar.length * hy.cos(theta) * fy
+                + force.torque
             )
 
-        self.external_forces_expr = np.asarray(Q, dtype=object)
+        self.Q_nc = np.asarray(Q_nc, dtype=object)
