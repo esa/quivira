@@ -92,7 +92,7 @@ def build_Jdqd(J, q, qd):
 
     return Jdqd
 
-def find_constrained_accelerations(qdd_free, J, M, Jdqd, return_W=False):
+def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return_W=False):
     r"""Return constrained accelerations and the constraint multipliers.
 
     The constrained acceleration is
@@ -113,6 +113,9 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd, return_W=False):
         J (:class:`numpy.ndarray` or sequence): Constraint Jacobian :math:`J`.
         M (:class:`numpy.ndarray` or sequence): Mass matrix :math:`M`.
         Jdqd (sequence): Product :math:`\dot J \dot q`.
+        Q_nc (:class:`numpy.ndarray` or sequence, optional): Generalized applied forces,
+            in the same ordering as q. Entries may be symbolic
+            functions of q, qd, and time. Defaults to None.
         return_W (:class:`bool`, optional): Whether to also return the Delassus
             matrix :math:`W`. Default is False.
 
@@ -131,6 +134,16 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd, return_W=False):
     # The constraint force acts through the term J^T W^{-1}(J qdd_free + Jdot qd),
     # with the sign convention from the derivation in the TeX notes.
     M_inv = invert_matrix(M)
+
+    # Add generalized applied forces to the free acceleration.
+    if Q_nc is not None:
+        Q_nc = np.asarray(Q_nc, dtype=object)
+
+        if Q_nc.shape != qdd_free.shape:
+            raise ValueError("Q_nc must have the same shape as qdd_free")
+
+        qdd_free = qdd_free + M_inv @ Q_nc
+
     JT = J.T
     W = J @ M_inv @ JT
 
@@ -168,7 +181,7 @@ def build_constraint_jacobian(F, q):
     return J
 
 
-def lagrange_eom(lagrangian, F, q, qd, *, return_multipliers=False, return_W=False):
+def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, return_W=False):
     r"""Assemble the first-order ODE system for the constrained dynamics.
 
     This helper forms the free-acceleration terms from the Lagrangian,
@@ -181,6 +194,9 @@ def lagrange_eom(lagrangian, F, q, qd, *, return_multipliers=False, return_W=Fal
         F (sequence): Constraint residuals :math:`F(q)`.
         q (sequence): Generalized coordinates.
         qd (sequence): Generalized velocities.
+        Q_nc (sequence, optional): Generalized applied forces,
+            in the same ordering as q. Entries may be symbolic
+            functions of q, qd, and time. Defaults to None.
         return_multipliers (:class:`bool`, optional): Whether to also return
             the Lagrange multiplier vector. Default is False.
         return_W (:class:`bool`, optional): Whether to also return the Delassus
@@ -213,11 +229,9 @@ def lagrange_eom(lagrangian, F, q, qd, *, return_multipliers=False, return_W=Fal
 
     # Enforce the algebraic constraints by projecting the free acceleration onto the constraint-consistent subspace.
     if return_W:
-        qdd, lambda_mult, W = find_constrained_accelerations(
-            qdd_free, J, M, Jdqd, return_W=True
-        )
+        qdd, lambda_mult, W = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc, return_W=True)
     else:
-        qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd)
+        qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc)
 
     # Turn the second-order system into the first-order form expected by the integrator: qdot = v and vdot = qdd.
     ode_system = []
