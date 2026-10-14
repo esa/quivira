@@ -6,8 +6,21 @@ from matplotlib.patches import FancyArrowPatch
 from IPython.display import HTML, display
 
 
-def animate_bar_model(model, trajectory, interval=30, save_animation=False):
-    """Animate bars, applied point forces, and applied planar torques."""
+def animate_bar_model(
+    model,
+    trajectory,
+    interval=30,
+    save_animation=False,
+    torque_values=None,
+    force_values=None,
+):
+    """Animate bars, applied point forces, and planar torque arrows.
+
+    Force values are ``(fx, fy)`` pairs and torque values are scalars, each
+    ordered to match ``model.external_forces``. Numeric model values are used
+    by default; symbolic values default to positive x force and positive
+    counterclockwise torque.
+    """
     bars = model.bars
     forces = model.external_forces
     n_bars = len(bars)
@@ -45,9 +58,47 @@ def animate_bar_model(model, trajectory, interval=30, save_animation=False):
     plot_span = max(x_max - x_min, y_max - y_min, 1.0)
     padding = 0.25 * plot_span
 
-    force_vectors = np.asarray(
-        [(force.fx, force.fy) for force in forces], dtype=float
-    ).reshape(-1, 2)
+    if force_values is None:
+        force_vectors = []
+        for force in forces:
+            try:
+                force_vectors.append((float(force.fx), float(force.fy)))
+            except (TypeError, ValueError):
+                force_vectors.append((1.0, 0.0))
+        force_vectors = np.asarray(force_vectors, dtype=float).reshape(-1, 2)
+    else:
+        try:
+            force_vectors = np.asarray(force_values, dtype=float).reshape(-1, 2)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "force_values must contain numeric (fx, fy) pairs for each force"
+            ) from error
+        if force_vectors.shape[0] != len(forces):
+            raise ValueError(
+                "force_values must have one (fx, fy) pair for each force"
+            )
+
+    if torque_values is None:
+        torque_values = []
+        for force in forces:
+            try:
+                torque_values.append(float(force.torque))
+            except (TypeError, ValueError):
+                torque_values.append(1.0)
+    else:
+        try:
+            torque_values = np.asarray(
+                torque_values, dtype=float
+            ).reshape(-1)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "torque_values must contain numeric torques for each force"
+            ) from error
+        if torque_values.size != len(forces):
+            raise ValueError(
+                "torque_values must have one value for each force"
+            )
+
     force_magnitudes = np.linalg.norm(force_vectors, axis=1)
     max_force = force_magnitudes.max() if len(force_magnitudes) else 0.0
     force_scale = 0.18 * plot_span / max_force if max_force > 0 else 0.0
@@ -65,9 +116,21 @@ def animate_bar_model(model, trajectory, interval=30, save_animation=False):
         for i in range(n_bars)
     ]
     joint_artist = ax.scatter([], [], s=35, color="black", zorder=4)
-    support_artist = ax.scatter(
+    fixed_support_artist = ax.scatter(
         [], [], marker="+", s=90, color="black", zorder=5
     )
+    support_artists = []
+    for support in model.supports:
+        if support.dof_in_x and not support.dof_in_y:
+            line = ax.plot([], [], color="black", lw=2, zorder=5)[0]
+        elif support.dof_in_y and not support.dof_in_x:
+            line = ax.plot([], [], color="black", lw=2, zorder=5)[0]
+        else:
+            line = None
+        support_artists.append(line)
+    support_line_artists = [
+        artist for artist in support_artists if artist is not None
+    ]
 
     force_artist = None
     if forces:
@@ -104,12 +167,30 @@ def animate_bar_model(model, trajectory, interval=30, save_animation=False):
             point_on_bar(q, joint.bar_index[0], joint.s[0])
             for joint in model.joints
         ]
-        supports = [
-            point_on_bar(q, support.bar_index, support.s)
-            for support in model.supports
-        ]
         joint_artist.set_offsets(np.asarray(joints).reshape(-1, 2))
-        support_artist.set_offsets(np.asarray(supports).reshape(-1, 2))
+
+        fixed_supports = []
+        support_half_length = 0.035 * plot_span
+        for support, artist in zip(model.supports, support_artists):
+            point = point_on_bar(q, support.bar_index, support.s)
+            if not support.dof_in_x and not support.dof_in_y:
+                fixed_supports.append(point)
+            elif artist is not None:
+                if support.dof_in_x:
+                    artist.set_data(
+                        [point[0] - support_half_length,
+                         point[0] + support_half_length],
+                        [point[1], point[1]],
+                    )
+                else:
+                    artist.set_data(
+                        [point[0], point[0]],
+                        [point[1] - support_half_length,
+                         point[1] + support_half_length],
+                    )
+        fixed_support_artist.set_offsets(
+            np.asarray(fixed_supports).reshape(-1, 2)
+        )
 
         load_points = np.asarray(
             [
@@ -131,8 +212,7 @@ def animate_bar_model(model, trajectory, interval=30, save_animation=False):
         torque_artists.clear()
 
         torque_radius = 0.045 * plot_span
-        for point, force in zip(load_points, forces):
-            torque = force.torque
+        for point, torque in zip(load_points, torque_values):
             if torque == 0:
                 continue
 
@@ -162,18 +242,13 @@ def animate_bar_model(model, trajectory, interval=30, save_animation=False):
             )
             ax.add_patch(arrow)
             torque_artists.append(arrow)
-
-            label = ax.text(
-                point[0] + torque_radius,
-                point[1] + torque_radius,
-                f"M={torque:g}",
-                color="tab:purple",
-                fontsize=9,
-                zorder=8,
-            )
-            torque_artists.append(label)
-
-        artists = (*bar_lines, joint_artist, support_artist, *torque_artists)
+        artists = (
+            *bar_lines,
+            joint_artist,
+            fixed_support_artist,
+            *support_line_artists,
+            *torque_artists,
+        )
         if force_artist is not None:
             artists += (force_artist,)
         return artists
