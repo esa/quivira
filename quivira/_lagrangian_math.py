@@ -6,6 +6,9 @@ from scipy.differentiate import jacobian
 
 from ._linear_algebra import gaussian_elimination, invert_matrix
 
+# optional
+#import time
+
 
 def build_mass_matrix(lagrangian, qd):
     r"""Return the symbolic mass matrix for a Lagrangian.
@@ -150,7 +153,12 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
     # Solve W * lambda = -(J qdd_free + Jdqd), which is equivalent to
     # lambda = -W^{-1}(J qdd_free + Jdqd) in the paper's sign convention.
     rhs = -(J @ qdd_free + Jdqd)
+    #lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
+    start = time.perf_counter()
     lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
+    elapsed = time.perf_counter() - start
+    print(f"gaussian_elimination took {elapsed:.6f} seconds")
+
     correction = M_inv @ JT @ lambda_mult
     qdd = qdd_free + correction
 
@@ -223,7 +231,10 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
 
     # Build the mass matrix, the constraint Jacobian, and the chain-rule term
     # Jdot qd that appears in the acceleration constraint.
+    #start = time.perf_counter()
     M = build_mass_matrix(lagrangian, qd)
+    #elapsed = time.perf_counter() - start
+    #print(f"mass matrix took {elapsed:.6f} seconds")
     J = build_constraint_jacobian(F, q)
     Jdqd = build_Jdqd(J, q, qd)
 
