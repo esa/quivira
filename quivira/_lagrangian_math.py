@@ -7,8 +7,14 @@ from scipy.differentiate import jacobian
 from ._linear_algebra import gaussian_elimination, invert_matrix
 
 # optional
-#import time
+from contextlib import contextmanager
+import time
 
+@contextmanager
+def timed(name):
+    start = time.perf_counter()
+    yield
+    print(f"{name} took {time.perf_counter() - start:.6f} seconds")
 
 def build_mass_matrix(lagrangian, qd):
     r"""Return the symbolic mass matrix for a Lagrangian.
@@ -28,17 +34,14 @@ def build_mass_matrix(lagrangian, qd):
     Returns:
         :class:`numpy.ndarray`: Symbolic mass matrix with shape ``[n, n]``.
     """
-    n = len(qd)
-    matrix = []
 
-    for i in range(n):
-        row = []
-        for j in range(n):
-            entry = hy.diff(hy.diff(lagrangian, qd[j]), qd[i])
-            row.append(entry)
-        matrix.append(row)
+    derivatives = hy.diff_tensors(
+        [lagrangian],
+        diff_args=list(qd),
+        diff_order=2,
+    )
 
-    return np.asarray(matrix, dtype=object)
+    return derivatives.hessian(0)
 
 
 def build_Jdqd(J, q, qd):
@@ -64,36 +67,21 @@ def build_Jdqd(J, q, qd):
     Returns:
         :class:`numpy.ndarray`: The vector :math:`\dot J \dot q`.
     """
-    J = np.asarray(J, dtype=object)
     q = list(q)
-    qd = list(qd)
+    qd = np.asarray(qd, dtype=object)
 
-    if J.ndim != 2:
-        raise ValueError("J must be a 2D array")
-    if len(q) != J.shape[1]:
-        raise ValueError("J.shape[1] must match len(q)")
-    if len(qd) != len(q):
-        raise ValueError("len(qd) must match len(q)")
+    # First construct J * qd
+    Jqd = J @ qd
 
-    # The product is the chain-rule form of \dot J \dot q.
-    Jdqd = np.zeros(J.shape[0], dtype=object)
+    # Differentiate this vector with respect to q
+    derivative = hy.diff_tensors(
+        list(Jqd),
+        diff_args=q,
+        diff_order=1,
+    ).jacobian
 
-    for row in range(J.shape[0]):
-        for i, qi in enumerate(q):
-            # Differentiate each row of J with respect to the current coordinate.
-            jacobian_row = []
-            for col in range(J.shape[1]):
-                entry = J[row, col]
-                if entry == 0:
-                    derivative = 0
-                else:
-                    derivative = hy.diff(entry, qi)
-                jacobian_row.append(derivative)
-
-            # Accumulate the term (dJ/dq_i) qdot_i dot qdot, row by row.
-            Jdqd[row] = Jdqd[row] + qd[i] * np.dot(jacobian_row, qd)
-
-    return Jdqd
+    # Multiply by qd again
+    return derivative @ qd
 
 def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return_W=False):
     r"""Return constrained accelerations and the constraint multipliers.
@@ -136,31 +124,59 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
 
     # The constraint force acts through the term J^T W^{-1}(J qdd_free + Jdot qd),
     # with the sign convention from the derivation in the TeX notes.
-    M_inv = invert_matrix(M)
+    # start = time.perf_counter()
+    # M_inv = invert_matrix(M)
+    # elapsed = time.perf_counter() - start
+    # print(f"invert_matrix took {elapsed:.6f} seconds")
 
-    # Add generalized applied forces to the free acceleration.
-    if Q_nc is not None:
-        Q_nc = np.asarray(Q_nc, dtype=object)
+    # # Add generalized applied forces to the free acceleration.
+    # if Q_nc is not None:
+    #     Q_nc = np.asarray(Q_nc, dtype=object)
 
-        if Q_nc.shape != qdd_free.shape:
-            raise ValueError("Q_nc must have the same shape as qdd_free")
+    #     if Q_nc.shape != qdd_free.shape:
+    #         raise ValueError("Q_nc must have the same shape as qdd_free")
 
-        qdd_free = qdd_free + M_inv @ Q_nc
+    #     qdd_free = qdd_free + M_inv @ Q_nc
 
-    JT = J.T
-    W = J @ M_inv @ JT
+    # JT = J.T
+    # W = J @ M_inv @ JT
 
-    # Solve W * lambda = -(J qdd_free + Jdqd), which is equivalent to
-    # lambda = -W^{-1}(J qdd_free + Jdqd) in the paper's sign convention.
-    rhs = -(J @ qdd_free + Jdqd)
-    #lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
-    start = time.perf_counter()
-    lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
-    elapsed = time.perf_counter() - start
-    print(f"gaussian_elimination took {elapsed:.6f} seconds")
+    # with timed("invert_matrix"):
+    # M_inv = invert_matrix(M)
 
-    correction = M_inv @ JT @ lambda_mult
-    qdd = qdd_free + correction
+    # # Solve W * lambda = -(J qdd_free + Jdqd), which is equivalent to
+    # # lambda = -W^{-1}(J qdd_free + Jdqd) in the paper's sign convention.
+    # rhs = -(J @ qdd_free + Jdqd)
+    # #lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
+    # start = time.perf_counter()
+    # lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
+    # elapsed = time.perf_counter() - start
+    # print(f"gaussian_elimination took {elapsed:.6f} seconds")
+
+    # correction = M_inv @ JT @ lambda_mult
+    # qdd = qdd_free + correction
+
+    with timed("invert_matrix"):
+        M_inv = invert_matrix(M)
+
+    with timed("force contribution"):
+        if Q_nc is not None:
+            Q_nc = np.asarray(Q_nc, dtype=object)
+            qdd_free = qdd_free + M_inv @ Q_nc
+
+    with timed("build W"):
+        JT = J.T
+        W = J @ M_inv @ JT
+
+    with timed("build rhs"):
+        rhs = -(J @ qdd_free + Jdqd)
+
+    with timed("gaussian_elimination"):
+        lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
+
+    with timed("acceleration correction"):
+        correction = M_inv @ JT @ lambda_mult
+        qdd = qdd_free + correction
 
     if return_W:
         return qdd, lambda_mult, W
@@ -222,7 +238,10 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
     # Heyoka returns the Euler-Lagrange equations as ordered pairs of the form
     # (state_variable, rhs_expression). Keep only the entries for the velocity
     # variables so the free acceleration matches the ordering in qd.
+    start = time.perf_counter()
     free_system = hy.lagrangian(lagrangian, q, qd)
+    elapsed = time.perf_counter() - start
+    print(f"hy.lagrangian took {elapsed:.6f} seconds")
     qdd_free = []
     for variable, rhs in free_system:
         if variable in qd:
@@ -231,18 +250,27 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
 
     # Build the mass matrix, the constraint Jacobian, and the chain-rule term
     # Jdot qd that appears in the acceleration constraint.
-    #start = time.perf_counter()
+    start = time.perf_counter()
     M = build_mass_matrix(lagrangian, qd)
-    #elapsed = time.perf_counter() - start
-    #print(f"mass matrix took {elapsed:.6f} seconds")
+    elapsed = time.perf_counter() - start
+    print(f"build_mass_matrix took {elapsed:.6f} seconds")
+    start = time.perf_counter()
     J = build_constraint_jacobian(F, q)
+    elapsed = time.perf_counter() - start
+    print(f"build_constraint_jacobian took {elapsed:.6f} seconds")
+    start = time.perf_counter()
     Jdqd = build_Jdqd(J, q, qd)
+    elapsed = time.perf_counter() - start
+    print(f"build_Jdqd took {elapsed:.6f} seconds")
 
     # Enforce the algebraic constraints by projecting the free acceleration onto the constraint-consistent subspace.
+    start = time.perf_counter()
     if return_W:
         qdd, lambda_mult, W = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc, return_W=True)
     else:
         qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc)
+    elapsed = time.perf_counter() - start
+    print(f"find_constrained_accelerations took {elapsed:.6f} seconds")
 
     # Turn the second-order system into the first-order form expected by the integrator: qdot = v and vdot = qdd.
     ode_system = []
