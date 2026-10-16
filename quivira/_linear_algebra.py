@@ -69,7 +69,7 @@ def create_block_diagonal(blocks):
     return result
 
 
-def gaussian_elimination(S, b):
+def old_gaussian_elimination(S, b):
     """Solve a symbolic linear system with sparse-aware Gaussian elimination.
 
     Args:
@@ -218,3 +218,300 @@ def invert_matrix(matrix):
         inverse[:, column] = solution.reshape(dim)
 
     return inverse
+
+# New gaussian elimination splits factorization and solve
+
+
+def gaussian_factorize(S):
+    """Compute a sparsity-aware symbolic LU factorization.
+
+    Stores L (without its unit diagonal) and U in one matrix.
+    Tracks structural zeros and caches nonzero column indices
+    for efficient repeated solves. Does not perform row pivoting.
+
+    Args:
+        S (:class:`numpy.ndarray` or sequence): Square symbolic
+            coefficient matrix with shape ``(n, n)``.
+
+    Raises:
+        ValueError: If ``S`` is not square.
+        ZeroDivisionError: If a structurally zero pivot is encountered.
+
+    Returns:
+        tuple: (LU, zero_pattern, lower_cols, upper_cols).
+            The column lists contain the nonzero positions of
+            the lower and upper triangular factors.
+    """
+    zero = hy.expression(0)
+
+    # Validate and copy the coefficient matrix.
+    A = np.asarray(S, dtype=object)
+
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise ValueError("S must be a square 2D array")
+
+    A = A.copy()
+    dim = A.shape[0]
+
+    # Identify structural zeros and nonzero entries above the diagonal.
+    zero_pattern = np.empty(A.shape, dtype=bool)
+    upper_active = [set() for _ in range(dim)]
+
+    for row in range(dim):
+        for col in range(dim):
+            is_zero = A[row, col] == zero
+            zero_pattern[row, col] = is_zero
+
+            if col > row and not is_zero:
+                upper_active[row].add(col)
+
+    # Perform Gaussian elimination and store the factors of L.
+    for pivot_row in range(dim):
+        if zero_pattern[pivot_row, pivot_row]:
+            raise ZeroDivisionError("zero pivot encountered")
+
+        pivot = A[pivot_row, pivot_row]
+
+        # Only these columns can contribute to elimination.
+        pivot_cols = sorted(upper_active[pivot_row])
+
+        for row in range(pivot_row + 1, dim):
+            if zero_pattern[row, pivot_row]:
+                continue
+
+            factor = A[row, pivot_row] / pivot
+
+            # Store the elimination factor in the lower triangle.
+            A[row, pivot_row] = factor
+            zero_pattern[row, pivot_row] = factor == zero
+
+            if zero_pattern[row, pivot_row]:
+                continue
+
+            # Update only columns where the pivot row is nonzero.
+            for col in pivot_cols:
+                if zero_pattern[row, col]:
+                    updated = -(factor * A[pivot_row, col])
+                else:
+                    updated = A[row, col] - factor * A[pivot_row, col]
+
+                A[row, col] = updated
+                is_zero = updated == zero
+                zero_pattern[row, col] = is_zero
+
+                # Update the sparsity pattern as fill-in occurs.
+                if col > row:
+                    if is_zero:
+                        upper_active[row].discard(col)
+                    else:
+                        upper_active[row].add(col)
+
+    # Cache nonzero column indices for repeated substitutions.
+    lower_cols = [
+        [col for col in range(row) if not zero_pattern[row, col]]
+        for row in range(dim)
+    ]
+
+    upper_cols = [
+        sorted(cols) for cols in upper_active
+    ]
+
+    return A, zero_pattern, lower_cols, upper_cols
+
+
+
+def gaussian_solve_factored(factorization, b):
+    """Solve a symbolic system using a cached sparsity-aware LU factorization.
+
+    Solves S @ x = b through forward and backward substitution,
+    skipping structurally zero matrix entries and intermediate values.
+
+    Args:
+        factorization (tuple): Output from ``gaussian_factorize()``,
+            containing the LU matrix and cached sparsity information.
+        b (:class:`numpy.ndarray` or sequence): Right-hand side vector
+            containing exactly ``n`` elements.
+
+    Raises:
+        ValueError: If ``b`` has an incompatible size.
+
+    Returns:
+        :class:`numpy.ndarray`: Symbolic solution vector with
+        shape ``(n, 1)``.
+    """
+    LU, zero_pattern, lower_cols, upper_cols = factorization
+    dim = LU.shape[0]
+    zero = hy.expression(0)
+
+    # Validate the right-hand side.
+    rhs = np.asarray(b, dtype=object)
+
+    if rhs.size != dim:
+        raise ValueError("b must contain exactly dim elements")
+
+    rhs = rhs.reshape(dim)
+
+    # 1. Forward substitution: L @ y = b.
+    y = np.empty(dim, dtype=object)
+
+    for row in range(dim):
+        terms = []
+
+        if rhs[row] != zero:
+            terms.append(rhs[row])
+
+        # Use only nonzero entries of L and y.
+        for col in lower_cols[row]:
+            if y[col] == zero:
+                continue
+
+            terms.append(-LU[row, col] * y[col])
+
+        # Combine terms into a flat symbolic sum.
+        if not terms:
+            y[row] = zero
+        elif len(terms) == 1:
+            y[row] = terms[0]
+        else:
+            y[row] = hy.sum(terms)
+
+    # 2. Backward substitution: U @ x = y.
+    x = np.empty(dim, dtype=object)
+
+    for row in range(dim - 1, -1, -1):
+        terms = []
+
+        if y[row] != zero:
+            terms.append(y[row])
+
+        # Use only nonzero entries of U and x.
+        for col in upper_cols[row]:
+            if x[col] == zero:
+                continue
+
+            terms.append(-LU[row, col] * x[col])
+
+        if not terms:
+            x[row] = zero
+        else:
+            numerator = (
+                terms[0] if len(terms) == 1 else hy.sum(terms)
+            )
+
+            # Avoid unnecessary symbolic division by the pivot.
+            x[row] = (
+                zero if numerator == zero
+                else numerator / LU[row, row]
+            )
+
+    return x.reshape(dim, 1)
+
+def gaussian_elimination(S, b):
+    r"""Solve a symbolic linear system using sparsity-aware Gaussian elimination.
+
+    Solves the linear system
+
+    .. math::
+
+        S x = b
+
+    by first computing an LU factorization of the coefficient matrix
+    and then performing forward and backward substitution.
+
+    The factorization is computed for each call. To solve multiple systems
+    with the same coefficient matrix more efficiently, use
+    ``gaussian_factorize()`` once and reuse the result with
+    ``gaussian_solve_factored()``.
+
+    Args:
+        S (:class:`numpy.ndarray` or sequence): Square coefficient matrix
+            containing symbolic or numeric entries, with shape ``(n, n)``.
+
+        b (:class:`numpy.ndarray` or sequence): Right-hand side vector
+            containing symbolic or numeric entries. Must contain exactly
+            ``n`` elements.
+
+    Raises:
+        ValueError: If ``S`` is not square or ``b`` has an incompatible size.
+
+        ZeroDivisionError: If a structurally zero pivot is encountered
+            during factorization.
+
+    Notes:
+        The underlying factorization skips known zero entries to reduce
+        unnecessary symbolic operations. No row pivoting is performed,
+        so the solver may fail for invertible matrices with zero pivots.
+
+        The input matrix and right-hand side are not modified.
+
+    Returns:
+        :class:`numpy.ndarray`: Symbolic solution vector with shape
+        ``(n, 1)``.
+    """
+    factorization = gaussian_factorize(S)
+    return gaussian_solve_factored(factorization, b)
+
+
+def my_matmul(A, B):
+    """Multiply two symbolic matrices while skipping known zero entries.
+
+    Computes C = A @ B using only products where both entries are
+    structurally nonzero. Nonzero entries of B are identified once
+    and reused throughout the multiplication.
+
+    Args:
+        A (:class:`numpy.ndarray` or sequence): Left matrix (m, n).
+        B (:class:`numpy.ndarray` or sequence): Right matrix (n, p).
+
+    Returns:
+        :class:`numpy.ndarray`: Symbolic product matrix (m, p).
+    """
+    A = np.asarray(A, dtype=object)
+    B = np.asarray(B, dtype=object)
+
+    if A.ndim != 2 or B.ndim != 2:
+        raise ValueError("Both inputs must be 2D matrices")
+
+    m, n = A.shape
+    n2, p = B.shape
+    print(f"my_matmul: A{A.shape} @ B{B.shape} -> C({m}, {p})")
+
+    if n != n2:
+        raise ValueError("Incompatible matrix shapes")
+
+    zero = hy.expression(0)
+    C = np.empty((m, p), dtype=object)
+
+    # Store only nonzero entries of each row of B.
+    B_rows = [
+        [(j, B[k, j]) for j in range(p) if B[k, j] != zero]
+        for k in range(n)
+    ]
+
+    # Calculate one output row at a time.
+    for i in range(m):
+
+        # Collect the symbolic terms for each output column.
+        terms = [[] for _ in range(p)]
+
+        for k in range(n):
+            aik = A[i, k]
+
+            # A zero entry contributes nothing to the product.
+            if aik == zero:
+                continue
+
+            # Only multiply by nonzero entries of B.
+            for j, bkj in B_rows[k]:
+                terms[j].append(aik * bkj)
+
+        # Combine the contributions with heyoka.sum().
+        for j in range(p):
+            if not terms[j]:
+                C[i, j] = zero
+            elif len(terms[j]) == 1:
+                C[i, j] = terms[j][0]
+            else:
+                C[i, j] = hy.sum(terms[j])
+
+    return C

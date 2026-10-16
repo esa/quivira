@@ -4,7 +4,7 @@ import numpy as np
 import heyoka as hy
 from scipy.differentiate import jacobian
 
-from ._linear_algebra import gaussian_elimination, invert_matrix
+from ._linear_algebra import gaussian_elimination, gaussian_solve_factored, gaussian_factorize, my_matmul
 
 # optional
 from contextlib import contextmanager
@@ -99,6 +99,29 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
 
         W = J M^{-1} J^T.
 
+    this is simplified to:
+    The constrained acceleration is
+
+    .. math::
+
+        \ddot{q} = \ddot{q}_{\mathrm{applied}} + G \lambda,
+
+    where
+
+    .. math::
+
+        G = M^{-1} J^T, \qquad W = JG,
+
+    and
+
+    .. math::
+
+        W \lambda = -(J \ddot{q}_{\mathrm{applied}} + \dot{J}\dot{q}).
+
+    The matrix G is calculated by solving M G = J^T, avoiding the
+    explicit inversion of M. The mass matrix is factorized only once,
+    and the factorization is reused for all right-hand sides.
+
     Args:
         qdd_free (sequence): Free acceleration vector.
         J (:class:`numpy.ndarray` or sequence): Constraint Jacobian :math:`J`.
@@ -119,65 +142,64 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
     """
     J = np.asarray(J, dtype=object)
     M = np.asarray(M, dtype=object)
-    qdd_free = np.asarray(qdd_free, dtype=object)
-    Jdqd = np.asarray(Jdqd, dtype=object)
+    qdd_free = np.asarray(qdd_free, dtype=object).reshape(-1)
+    Jdqd = np.asarray(Jdqd, dtype=object).reshape(-1)
 
-    # The constraint force acts through the term J^T W^{-1}(J qdd_free + Jdot qd),
-    # with the sign convention from the derivation in the TeX notes.
-    # start = time.perf_counter()
-    # M_inv = invert_matrix(M)
-    # elapsed = time.perf_counter() - start
-    # print(f"invert_matrix took {elapsed:.6f} seconds")
+    # Matrix checks
+    if J.ndim != 2:
+        raise ValueError("J must be a 2D array")
+    m, n = J.shape
+    if M.shape != (n, n):
+        raise ValueError("M must have shape (n, n)")
+    if qdd_free.size != n or Jdqd.size != m:
+        raise ValueError("Incompatible vector dimensions")
+    if Q_nc is not None:
+        Q_nc = np.asarray(Q_nc, dtype=object)
+        if Q_nc.shape != qdd_free.shape:
+            raise ValueError("Q_nc must have the same shape as qdd_free")
 
-    # # Add generalized applied forces to the free acceleration.
-    # if Q_nc is not None:
-    #     Q_nc = np.asarray(Q_nc, dtype=object)
+    # Factorize M once and reuse the factorization for all subsequent solves.
+    with timed("factorize M"):
+        M_factors = gaussian_factorize(M)
 
-    #     if Q_nc.shape != qdd_free.shape:
-    #         raise ValueError("Q_nc must have the same shape as qdd_free")
-
-    #     qdd_free = qdd_free + M_inv @ Q_nc
-
-    # JT = J.T
-    # W = J @ M_inv @ JT
-
-    # with timed("invert_matrix"):
-    # M_inv = invert_matrix(M)
-
-    # # Solve W * lambda = -(J qdd_free + Jdqd), which is equivalent to
-    # # lambda = -W^{-1}(J qdd_free + Jdqd) in the paper's sign convention.
-    # rhs = -(J @ qdd_free + Jdqd)
-    # #lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
-    # start = time.perf_counter()
-    # lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
-    # elapsed = time.perf_counter() - start
-    # print(f"gaussian_elimination took {elapsed:.6f} seconds")
-
-    # correction = M_inv @ JT @ lambda_mult
-    # qdd = qdd_free + correction
-
-    with timed("invert_matrix"):
-        M_inv = invert_matrix(M)
-
+    # Add generalized applied forces by solving M @ force_acc = Q_nc.
     with timed("force contribution"):
         if Q_nc is not None:
-            Q_nc = np.asarray(Q_nc, dtype=object)
-            qdd_free = qdd_free + M_inv @ Q_nc
+            force_acc = gaussian_solve_factored(M_factors, Q_nc).reshape(-1)
+            qdd_free = qdd_free + force_acc
 
+    # Handle systems without constraints.
+    if m == 0:
+        lambda_mult = np.empty(0, dtype=object)
+        if return_W:
+            return qdd_free, lambda_mult, np.empty((0, 0), dtype=object)
+        return qdd_free, lambda_mult
+
+    # Calculate G = M^-1 @ J.T without explicitly inverting M.
+    # Solve M @ G = J.T column by column, reusing the factorization.
+    with timed("solve M @ G = J.T"):
+        G = np.empty((n, m), dtype=object)
+        for col in range(m):
+            rhs = J[col, :]
+            G[:, col] = gaussian_solve_factored(M_factors, rhs).reshape(-1)
+
+    # Construct the Delassus matrix W = J @ M^-1 @ J.T = J @ G.
     with timed("build W"):
-        JT = J.T
-        W = J @ M_inv @ JT
+        W = my_matmul(J, G)
 
+    # Construct the right-hand side of W @ lambda = rhs.
     with timed("build rhs"):
         rhs = -(J @ qdd_free + Jdqd)
 
+    # Solve for the Lagrange multipliers.
     with timed("gaussian_elimination"):
         lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
 
+    # Calculate constrained accelerations, reusing G = M^-1 @ J.T.
     with timed("acceleration correction"):
-        correction = M_inv @ JT @ lambda_mult
+        correction = my_matmul(G, lambda_mult.reshape(-1, 1)).reshape(-1)
         qdd = qdd_free + correction
-
+    
     if return_W:
         return qdd, lambda_mult, W
 
