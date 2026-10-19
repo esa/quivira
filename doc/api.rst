@@ -9,11 +9,17 @@ work directly with :class:`heyoka.expression` objects and NumPy arrays.
 
 .. autofunction:: create_block_diagonal
 
+.. autofunction:: gaussian_factorize
+
+.. autofunction:: gaussian_solve_factored
+
 .. autofunction:: gaussian_elimination
 
 .. autofunction:: identity
 
 .. autofunction:: invert_matrix
+
+.. autofunction:: sparse_matmul
 
 Constrained Lagrangian mechanics
 --------------------------------

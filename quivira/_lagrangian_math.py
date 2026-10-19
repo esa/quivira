@@ -4,7 +4,7 @@ import numpy as np
 import heyoka as hy
 from scipy.differentiate import jacobian
 
-from ._linear_algebra import gaussian_elimination, gaussian_solve_factored, gaussian_factorize, my_matmul
+from ._linear_algebra import gaussian_elimination, gaussian_solve_factored, gaussian_factorize, sparse_matmul
 
 # optional
 from contextlib import contextmanager
@@ -185,7 +185,7 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
 
     # Construct the Delassus matrix W = J @ M^-1 @ J.T = J @ G.
     with timed("build W"):
-        W = my_matmul(J, G)
+        W = sparse_matmul(J, G)
 
     # Construct the right-hand side of W @ lambda = rhs.
     with timed("build rhs"):
@@ -197,7 +197,7 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
 
     # Calculate constrained accelerations, reusing G = M^-1 @ J.T.
     with timed("acceleration correction"):
-        correction = my_matmul(G, lambda_mult.reshape(-1, 1)).reshape(-1)
+        correction = sparse_matmul(G, lambda_mult.reshape(-1, 1)).reshape(-1)
         qdd = qdd_free + correction
     
     if return_W:

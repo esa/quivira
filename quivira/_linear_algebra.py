@@ -452,7 +452,7 @@ def gaussian_elimination(S, b):
     return gaussian_solve_factored(factorization, b)
 
 
-def my_matmul(A, B):
+def sparse_matmul(A, B):
     """Multiply two symbolic matrices while skipping known zero entries.
 
     Computes C = A @ B using only products where both entries are
