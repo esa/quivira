@@ -19,6 +19,15 @@ def identity(x):
     return x
 
 
+def _as_expression(value):
+    """Convert a numeric scalar to a Heyoka expression."""
+    if isinstance(value, hy.expression):
+        return value
+    if isinstance(value, np.generic):
+        value = value.item()
+    return hy.expression(value)
+
+
 def create_block_diagonal(blocks):
     """Create a block-diagonal matrix from square symbolic arrays.
 
@@ -253,6 +262,9 @@ def gaussian_factorize(S):
     A = A.copy()
     dim = A.shape[0]
 
+    for index in np.ndindex(A.shape):
+        A[index] = _as_expression(A[index])
+
     # Identify structural zeros and nonzero entries above the diagonal.
     zero_pattern = np.empty(A.shape, dtype=bool)
     upper_active = [set() for _ in range(dim)]
@@ -349,7 +361,9 @@ def gaussian_solve_factored(factorization, b):
     if rhs.size != dim:
         raise ValueError("b must contain exactly dim elements")
 
-    rhs = rhs.reshape(dim)
+    rhs = rhs.reshape(dim).copy()
+    for row in range(dim):
+        rhs[row] = _as_expression(rhs[row])
 
     # 1. Forward substitution: L @ y = b.
     y = np.empty(dim, dtype=object)
