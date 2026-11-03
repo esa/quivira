@@ -15,20 +15,17 @@ class bar:
     are used to assemble the generalized coordinates of the model.
     """
 
-    x0 = float
-    y0 = float
-    theta0 = float
-    length = float
-    mass = float
-    inertia = float
-
     def __init__(self, length, mass):
         """Initialize the bar geometry and inertial properties.
 
         Args:
-            length (:class:`float`): Bar length.
+            length (:class:`float` or :class:`heyoka.expression`): Bar length.
 
-            mass (:class:`float`): Bar mass.
+            mass (:class:`float` or :class:`heyoka.expression`): Bar mass.
+
+        Notes:
+            Heyoka expressions are preserved in the bar inertia and the symbolic
+            equations of motion.
         """
         self.x0 = None
         self.y0 = None
@@ -247,9 +244,9 @@ class bar_joint_model:
         """Append a new bar to the assembly.
 
         Args:
-            length (:class:`float`): Bar length.
+            length (:class:`float` or :class:`heyoka.expression`): Bar length.
 
-            mass (:class:`float`): Bar mass.
+            mass (:class:`float` or :class:`heyoka.expression`): Bar mass.
         """
         self.bars.append(bar(length, mass))
 
@@ -291,9 +288,9 @@ class bar_joint_model:
 
             theta0 (:class:`float`): Initial angle of the bar.
 
-            length (:class:`float`): Bar length.
+            length (:class:`float` or :class:`heyoka.expression`): Bar length.
 
-            mass (:class:`float`): Bar mass.
+            mass (:class:`float` or :class:`heyoka.expression`): Bar mass.
         """
         self.add_bar(length, mass)
         self.set_init_bar_attitude(-1, x0, y0, theta0)
@@ -643,58 +640,145 @@ class bar_joint_model:
             qd0.extend([bar.xd0, bar.yd0, bar.thetad0])
         return q0 + qd0
 
-    def check_constraint_fulfillment(self, state):
-        if len(state) != 6 * len(self.bars):
-            raise ValueError(f"Expected state of length {6 * len(self.bars)}, got {len(state)}")
+    def check_constraint_fulfillment(self, state, pars=None):
+        if pars is None:
+            if len(state) != 6 * len(self.bars):
+                raise ValueError(f"Expected state of length {6 * len(self.bars)}, got {len(state)}")
 
-        n = len(self.bars)
+            n = len(self.bars)
 
-        # Check joints
-        for joint_index, joint in enumerate(self.joints):
-            ref_bar = joint.bar_index[0]
-            ref_s = joint.s[0]
+            # Check joints
+            for joint_index, joint in enumerate(self.joints):
+                ref_bar = joint.bar_index[0]
+                ref_s = joint.s[0]
 
-            ref_x, ref_y = self._current_point_on_bar_from_state(state, ref_bar, ref_s)
+                ref_x, ref_y = self._current_point_on_bar_from_state(state, ref_bar, ref_s)
 
-            ref_theta = state[3 * ref_bar + 2]
-            ref_xd, ref_yd, ref_thetad = state[3 * n + 3 * ref_bar : 3 * n + 3 * ref_bar + 3]
-            ref_vx = ref_xd - ref_s * self.bars[ref_bar].length * np.sin(ref_theta) * ref_thetad
-            ref_vy = ref_yd + ref_s * self.bars[ref_bar].length * np.cos(ref_theta) * ref_thetad
+                ref_theta = state[3 * ref_bar + 2]
+                ref_xd, ref_yd, ref_thetad = state[3 * n + 3 * ref_bar : 3 * n + 3 * ref_bar + 3]
+                ref_vx = ref_xd - ref_s * self.bars[ref_bar].length * np.sin(ref_theta) * ref_thetad
+                ref_vy = ref_yd + ref_s * self.bars[ref_bar].length * np.cos(ref_theta) * ref_thetad
 
-            for bar_index, s in zip(joint.bar_index[1:], joint.s[1:]):
-                px, py = self._current_point_on_bar_from_state(state, bar_index, s)
+                for bar_index, s in zip(joint.bar_index[1:], joint.s[1:]):
+                    px, py = self._current_point_on_bar_from_state(state, bar_index, s)
 
-                theta = state[3 * bar_index + 2]
-                xd, yd, thetad = state[3 * n + 3 * bar_index : 3 * n + 3 * bar_index + 3]
-                vx = xd - s * self.bars[bar_index].length * np.sin(theta) * thetad
-                vy = yd + s * self.bars[bar_index].length * np.cos(theta) * thetad
+                    theta = state[3 * bar_index + 2]
+                    xd, yd, thetad = state[3 * n + 3 * bar_index : 3 * n + 3 * bar_index + 3]
+                    vx = xd - s * self.bars[bar_index].length * np.sin(theta) * thetad
+                    vy = yd + s * self.bars[bar_index].length * np.cos(theta) * thetad
 
-                if abs(px - ref_x) > self.tolerance or abs(py - ref_y) > self.tolerance:
-                    raise ValueError(f"State violates joint {joint_index}: bar {bar_index} does not coincide with bar {ref_bar}")
+                    if abs(px - ref_x) > self.tolerance or abs(py - ref_y) > self.tolerance:
+                        raise ValueError(f"State violates joint {joint_index}: bar {bar_index} does not coincide with bar {ref_bar}")
 
-                if abs(vx - ref_vx) > self.tolerance or abs(vy - ref_vy) > self.tolerance:
-                    raise ValueError(f"State violates velocity constraint at joint {joint_index}: bar {bar_index} does not move with bar {ref_bar}")
+                    if abs(vx - ref_vx) > self.tolerance or abs(vy - ref_vy) > self.tolerance:
+                        raise ValueError(f"State violates velocity constraint at joint {joint_index}: bar {bar_index} does not move with bar {ref_bar}")
 
-        # Check supports
-        for support_index, support in enumerate(self.supports):
-            px, py = self._current_point_on_bar_from_state(state, support.bar_index, support.s)
+            # Check supports
+            for support_index, support in enumerate(self.supports):
+                px, py = self._current_point_on_bar_from_state(state, support.bar_index, support.s)
 
-            theta = state[3 * support.bar_index + 2]
-            xd, yd, thetad = state[3 * n + 3 * support.bar_index : 3 * n + 3 * support.bar_index + 3]
-            vx = xd - support.s * self.bars[support.bar_index].length * np.sin(theta) * thetad
-            vy = yd + support.s * self.bars[support.bar_index].length * np.cos(theta) * thetad
+                theta = state[3 * support.bar_index + 2]
+                xd, yd, thetad = state[3 * n + 3 * support.bar_index : 3 * n + 3 * support.bar_index + 3]
+                vx = xd - support.s * self.bars[support.bar_index].length * np.sin(theta) * thetad
+                vy = yd + support.s * self.bars[support.bar_index].length * np.cos(theta) * thetad
 
-            if not support.dof_in_x and abs(px - support.x) > self.tolerance:
-                raise ValueError(f"State violates support {support_index} in x: got {px}, expected {support.x}")
+                if not support.dof_in_x and abs(px - support.x) > self.tolerance:
+                    raise ValueError(f"State violates support {support_index} in x: got {px}, expected {support.x}")
 
-            if not support.dof_in_y and abs(py - support.y) > self.tolerance:
-                raise ValueError(f"State violates support {support_index} in y: got {py}, expected {support.y}")
+                if not support.dof_in_y and abs(py - support.y) > self.tolerance:
+                    raise ValueError(f"State violates support {support_index} in y: got {py}, expected {support.y}")
 
-            if not support.dof_in_x and abs(vx) > self.tolerance:
-                raise ValueError(f"State violates velocity constraint at support {support_index} in x: got {vx}, expected 0")
+                if not support.dof_in_x and abs(vx) > self.tolerance:
+                    raise ValueError(f"State violates velocity constraint at support {support_index} in x: got {vx}, expected 0")
 
-            if not support.dof_in_y and abs(vy) > self.tolerance:
-                raise ValueError(f"State violates velocity constraint at support {support_index} in y: got {vy}, expected 0")
+                if not support.dof_in_y and abs(vy) > self.tolerance:
+                    raise ValueError(f"State violates velocity constraint at support {support_index} in y: got {vy}, expected 0")
+        else:
+            n_q = 3 * len(self.bars)
+
+            # Validate and split the numerical state.
+            state = np.asarray(state, dtype=float).ravel()
+
+            if state.size != 2 * n_q:
+                raise ValueError(
+                    f"Expected state of length {2 * n_q}, "
+                    f"got {state.size}"
+                )
+
+            if not np.all(np.isfinite(state)):
+                raise ValueError("State contains non-finite values")
+
+            # Build the symbolic coordinates and constraints.
+            # This works even before build_lagrange_eom() is called.
+            self._build_state_variables()
+            self._build_constraints()
+
+            F = list(self.F)
+
+            if not F:
+                return
+
+            # Construct the velocity-level constraints:
+            # dF/dt = J(q, p) @ qd
+            # All heyoka parameters remain symbolic here.
+            Fd = [
+                hy.sum([
+                    hy.diff(f, qj) * qdj
+                    for qj, qdj in zip(self.q, self.qd)
+                ])
+                for f in F
+            ]
+
+            # Compile position and velocity constraints together.
+            # The input ordering matches get_initial_state():
+            # [q0, q1, ..., qd0, qd1, ...].
+            constraint_func = hy.cfunc(
+                F + Fd,
+                vars=self.q + self.qd,
+                compact_mode=True
+            )
+
+            # Evaluate using the numerical parameter values.
+            if pars is None:
+                values = constraint_func(state)
+            else:
+                pars = np.asarray(pars, dtype=float).ravel()
+
+                if not np.all(np.isfinite(pars)):
+                    raise ValueError(
+                        "Parameters contain non-finite values"
+                    )
+
+                values = constraint_func(state, pars=pars)
+
+            values = np.asarray(values, dtype=float)
+
+            if not np.all(np.isfinite(values)):
+                raise ValueError(
+                    "Constraint evaluation produced non-finite values"
+                )
+
+            # The first half contains position residuals;
+            # the second half contains velocity residuals.
+            m = len(F)
+            position_residuals = values[:m]
+            velocity_residuals = values[m:]
+
+            # Check position constraints.
+            for i, residual in enumerate(position_residuals):
+                if abs(residual) > self.tolerance:
+                    raise ValueError(
+                        f"Position constraint {i} violated: "
+                        f"residual = {residual}"
+                    )
+
+            # Check velocity constraints.
+            for i, residual in enumerate(velocity_residuals):
+                if abs(residual) > self.tolerance:
+                    raise ValueError(
+                        f"Velocity constraint {i} violated: "
+                        f"residual = {residual}"
+                    )
 
     def print_model(self):
         """Print a human-readable summary of the assembled model."""
