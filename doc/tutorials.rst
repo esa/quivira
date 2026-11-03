@@ -23,3 +23,4 @@ Advanced
    :titlesonly:
    
    notebooks/scissor_mechanism
+   notebooks/fix_a_state

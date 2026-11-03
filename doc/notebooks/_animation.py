@@ -4,6 +4,7 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.path import Path
 from matplotlib.patches import FancyArrowPatch
 from IPython.display import HTML, display
+import heyoka as hy
 
 
 def animate_bar_model(
@@ -13,6 +14,7 @@ def animate_bar_model(
     save_animation=False,
     torque_values=None,
     force_values=None,
+    pars=None,
     bar_linewidth=2.5,
     joint_size=0.11,
     support_size=0.25,
@@ -38,7 +40,76 @@ def animate_bar_model(
         raise ValueError("trajectory must be a non-empty 2D array containing model states")
 
     q_frames = trajectory[:, :n_q].reshape(-1, n_bars, 3)
-    lengths = np.asarray([bar.length for bar in bars], dtype=float)
+
+    # Evaluate the symbolic model properties once, using the same indexed
+    # heyoka parameters that were passed to the integrator. No assumptions
+    # are made about which parameter is a length, joint s, or applied force.
+    if pars is not None:
+        pars = np.asarray(pars, dtype=float).ravel()
+        if not np.all(np.isfinite(pars)):
+            raise ValueError("pars must contain only finite numerical values")
+
+    joint_s_raw = [list(joint.s) for joint in model.joints]
+    n_joint_s = sum(len(group) for group in joint_s_raw)
+    n_supports = len(model.supports)
+    n_forces = len(forces)
+
+    raw_values = (
+        [bar.length for bar in bars]
+        + [s for group in joint_s_raw for s in group]
+        + [support.s for support in model.supports]
+        + [force.s for force in forces]
+    )
+    if force_values is None:
+        raw_values += [v for force in forces for v in (force.fx, force.fy)]
+    if torque_values is None:
+        raw_values += [force.torque for force in forces]
+
+    has_symbolic = any(isinstance(v, hy.expression) for v in raw_values)
+    if has_symbolic:
+        if pars is None:
+            raise ValueError(
+                "The model contains heyoka expressions; supply pars=ta.pars."
+            )
+        expressions = [
+            v if isinstance(v, hy.expression) else hy.expression(float(v))
+            for v in raw_values
+        ]
+        # Include parameters used by the integrator but not by geometry,
+        # so cfunc expects the full pars vector (e.g. event-only parameters).
+        if pars.size:
+            expressions.append(hy.par[pars.size - 1])
+        evaluate = hy.cfunc(expressions, vars=[], compact_mode=True)
+        evaluated = np.asarray(
+            evaluate(np.empty(0, dtype=float), pars=pars), dtype=float
+        ).ravel()[:len(raw_values)]
+    else:
+        evaluated = np.asarray(raw_values, dtype=float)
+
+    if not np.all(np.isfinite(evaluated)):
+        raise ValueError("Model geometry or loads evaluated to non-finite values")
+
+    index = 0
+    lengths = evaluated[index:index + n_bars]
+    index += n_bars
+    joint_positions = []
+    for group in joint_s_raw:
+        joint_positions.append(evaluated[index:index + len(group)])
+        index += len(group)
+    support_positions = evaluated[index:index + n_supports]
+    index += n_supports
+    force_positions = evaluated[index:index + n_forces]
+    index += n_forces
+
+    auto_force_vectors = None
+    if force_values is None:
+        auto_force_vectors = evaluated[index:index + 2 * n_forces].reshape(-1, 2)
+        index += 2 * n_forces
+    auto_torques = None
+    if torque_values is None:
+        auto_torques = evaluated[index:index + n_forces]
+        index += n_forces
+
     if not np.all(np.isfinite(lengths)) or np.any(lengths <= 0):
         raise ValueError("All bar lengths must be positive and finite")
     typical_length = float(np.median(lengths))
@@ -59,13 +130,7 @@ def animate_bar_model(
     padding = max(0.04 * plot_span, 0.35 * typical_length)
 
     if force_values is None:
-        vectors = []
-        for force in forces:
-            try:
-                vectors.append((float(force.fx), float(force.fy)))
-            except (TypeError, ValueError):
-                vectors.append((1.0, 0.0))
-        force_vectors = np.asarray(vectors, dtype=float).reshape(-1, 2)
+        force_vectors = auto_force_vectors
     else:
         try:
             force_vectors = np.asarray(force_values, dtype=float).reshape(-1, 2)
@@ -75,13 +140,7 @@ def animate_bar_model(
             raise ValueError("force_values must have one (fx, fy) pair for each force")
 
     if torque_values is None:
-        torques = []
-        for force in forces:
-            try:
-                torques.append(float(force.torque))
-            except (TypeError, ValueError):
-                torques.append(1.0)
-        torques = np.asarray(torques, dtype=float)
+        torques = auto_torques
     else:
         try:
             torques = np.asarray(torque_values, dtype=float).reshape(-1)
@@ -161,14 +220,16 @@ def animate_bar_model(
             line.set_data(endpoints[frame, i, :, 0], endpoints[frame, i, :, 1])
 
         joints = [
-            point_on_bar(q, joint.bar_index[0], joint.s[0])
-            for joint in model.joints
+            point_on_bar(q, joint.bar_index[0], positions[0])
+            for joint, positions in zip(model.joints, joint_positions)
         ]
         joint_artist.set_offsets(np.asarray(joints, dtype=float).reshape(-1, 2))
 
         fixed_supports = []
-        for support, artist in zip(model.supports, support_artists):
-            point = point_on_bar(q, support.bar_index, support.s)
+        for support, artist, s in zip(
+            model.supports, support_artists, support_positions
+        ):
+            point = point_on_bar(q, support.bar_index, s)
             if not support.dof_in_x and not support.dof_in_y:
                 fixed_supports.append(point)
             elif artist is not None:
@@ -187,7 +248,10 @@ def animate_bar_model(
         )
 
         load_points = np.asarray(
-            [point_on_bar(q, force.bar_index, force.s) for force in forces],
+            [
+                point_on_bar(q, force.bar_index, s)
+                for force, s in zip(forces, force_positions)
+            ],
             dtype=float,
         ).reshape(-1, 2)
         if force_artist is not None:
@@ -235,5 +299,6 @@ def animate_bar_model(
     if save_animation:
         anim.save("animation.gif", writer="pillow", fps=30, dpi=150)
     else:
+        # Keep the original, working GitHub HTML display mechanism.
         display(HTML(anim.to_jshtml()))
     plt.close(fig)
