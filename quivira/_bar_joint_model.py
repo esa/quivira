@@ -7,6 +7,13 @@ forming symbolic Lagrange equations of motion in a quivira model.
 import numpy as np
 import heyoka as hy
 import quivira as qv
+from ._fix_state import (
+            _compile_constraints,
+            parameter_values,
+            fix_configuration,
+            fix_velocity,
+        )
+from ._lagrangian_math import build_mass_matrix
 
 class bar:
     """Rigid bar segment with mass, geometric length, and initial pose.
@@ -186,6 +193,9 @@ class external_force:
             fx (:class:`float`): Force component along the x axis.
 
             fy (:class:`float`): Force component along the y axis.
+
+            torque (:class:`float`, optional): Applied moment about the bar
+                center, positive counterclockwise. Default is ``0``.
         """
         self.bar_index = bar_index
         self.s = s
@@ -222,6 +232,7 @@ class bar_joint_model:
         self.qd = []
 
         self.lagrangian = None
+        self.mass_matrix = None
         self.F = np.asarray([], dtype=object)
         self.Q_nc = np.asarray([], dtype=object)
 
@@ -323,10 +334,17 @@ class bar_joint_model:
         self.joints.append(joint(bar_index, s))
 
     def infer_joints(self):
-        """Infer joints from intersections of bars in their initial poses.
+        """Infer joints from intersections and endpoint contacts in initial poses.
 
-        Detects intersections anywhere along the bars, groups bars meeting
-        at the same point, and avoids duplicate joints.
+        Detects finite-segment intersections and collinear endpoint contacts,
+        groups bars meeting at the same point, and merges any existing joints
+        to avoid duplicates. Collinear overlap over a nonzero length is
+        ambiguous and raises an error.
+
+        Raises:
+            ValueError: If a bar lacks an initial attitude, has a non-finite or
+                near-zero length, has a conflicting existing joint position, or
+                overlaps another bar along a segment.
 
         Returns:
             int: Total number of joints after inference.
@@ -496,14 +514,18 @@ class bar_joint_model:
             dof_in_y (:class:`bool`): If ``True``, y motion is unconstrained.
 
             x (:class:`float`, optional): Support x position. If omitted, the
-                initial bar position is used. Default is ``None``.
+                initial point position is used. If either coordinate is omitted,
+                both coordinates are taken from the initial bar pose. Default is
+                ``None``.
 
             y (:class:`float`, optional): Support y position. If omitted, the
-                initial bar position is used. Default is ``None``.
+                initial point position is used. If either coordinate is omitted,
+                both coordinates are taken from the initial bar pose. Default is
+                ``None``.
 
         Raises:
-            ValueError: Raised if the support position is requested before the bar
-                has an initial state.
+            ValueError: If either support coordinate is omitted and the bar does
+                not have an initial state from which to compute the point.
         """
         if x == None or y == None:
             if self.bars[bar_index].x0 == None or self.bars[bar_index].y0 == None:
@@ -525,7 +547,8 @@ class bar_joint_model:
 
             fy (:class:`float`): Force component along the global y axis.
 
-            torque (:class:`float`): Torque mathematically positive
+            torque (:class:`float`, optional): Applied moment about the bar
+                center, positive counterclockwise. Default is ``0.0``.
         """
         self.external_forces.append(external_force(bar_index, s, fx, fy, torque))
 
@@ -562,23 +585,28 @@ class bar_joint_model:
         self._build_lagrangian()
         self._build_constraints()
         self._build_external_forces()
-        return qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, self.Q_nc, return_multipliers=return_multipliers, return_W=return_W)
+        result = qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, self.Q_nc, return_multipliers=return_multipliers, return_W=return_W, return_M=True)
+        # Save the symbolic mass matrix
+        self.mass_matrix = result[-1]
+        # Now return only the return values of build_lagrange_eom(), not the mass matrix
+        original_results = result[:-1]
+        if len(original_results) == 1:
+            return original_results[0]
+
+        return original_results
 
     def set_initial_state(self, initial_state):
-        """Set the initial bar poses and velocities from a flattened state vector.
+        """Set bar poses and velocities from a flattened or per-bar state.
 
         Args:
-            initial_state (:class:`list` or :class:`numpy.ndarray`): State vector
-                in the same order as :meth:`get_initial_state`, where all
-                generalized coordinates are listed first and all generalized
-                velocities follow.
+            initial_state (:class:`list` or :class:`numpy.ndarray`): Either a
+                flattened state ordered as in :meth:`get_initial_state`, or a
+                sequence with one six-value state
+                ``[x0, y0, theta0, xd0, yd0, thetad0]`` per bar.
 
         Raises:
-            ValueError: Raised when the state length does not match the number of
-                bars or when an individual bar state is malformed.
-
-        Returns:
-            list: The stacked initial generalized coordinates and velocities.
+            ValueError: If the input shape is invalid or the assigned initial
+                state violates a position or velocity constraint.
         """
         flat_state = np.asarray(initial_state, dtype=float).ravel()
 
@@ -641,144 +669,254 @@ class bar_joint_model:
         return q0 + qd0
 
     def check_constraint_fulfillment(self, state, pars=None):
-        if pars is None:
-            if len(state) != 6 * len(self.bars):
-                raise ValueError(f"Expected state of length {6 * len(self.bars)}, got {len(state)}")
+        """Check position and velocity constraints for a state.
 
-            n = len(self.bars)
+        The state is split into generalized coordinates followed by generalized
+        velocities. Both the position residuals and the velocity residuals
+        :math:`J(q)\\dot q` must be finite and no larger than ``self.tolerance``
+        in absolute value. Heyoka parameters used by the constraints can be
+        supplied through ``pars``.
 
-            # Check joints
-            for joint_index, joint in enumerate(self.joints):
-                ref_bar = joint.bar_index[0]
-                ref_s = joint.s[0]
+        Args:
+            state (:class:`list` or :class:`numpy.ndarray`): Coordinates followed
+                by velocities, in the ordering returned by
+                :meth:`get_initial_state`.
 
-                ref_x, ref_y = self._current_point_on_bar_from_state(state, ref_bar, ref_s)
+            pars (:class:`list` or :class:`numpy.ndarray`, optional): Values for
+                Heyoka parameters appearing in the constraints. Default is
+                ``None``.
 
-                ref_theta = state[3 * ref_bar + 2]
-                ref_xd, ref_yd, ref_thetad = state[3 * n + 3 * ref_bar : 3 * n + 3 * ref_bar + 3]
-                ref_vx = ref_xd - ref_s * self.bars[ref_bar].length * np.sin(ref_theta) * ref_thetad
-                ref_vy = ref_yd + ref_s * self.bars[ref_bar].length * np.cos(ref_theta) * ref_thetad
+        Raises:
+            ValueError: If a position or velocity constraint is non-finite or
+                exceeds the model tolerance.
+        """
 
-                for bar_index, s in zip(joint.bar_index[1:], joint.s[1:]):
-                    px, py = self._current_point_on_bar_from_state(state, bar_index, s)
+        nq = 3 * len(self.bars)
 
-                    theta = state[3 * bar_index + 2]
-                    xd, yd, thetad = state[3 * n + 3 * bar_index : 3 * n + 3 * bar_index + 3]
-                    vx = xd - s * self.bars[bar_index].length * np.sin(theta) * thetad
-                    vy = yd + s * self.bars[bar_index].length * np.cos(theta) * thetad
+        position = state[:nq]
+        velocity = state[nq:]
 
-                    if abs(px - ref_x) > self.tolerance or abs(py - ref_y) > self.tolerance:
-                        raise ValueError(f"State violates joint {joint_index}: bar {bar_index} does not coincide with bar {ref_bar}")
+        # Build the symbolic coordinates and constraints
+        # This also works before build_lagrange_eom() is called
+        if len(self.q) != nq:
+            self._build_state_variables()
 
-                    if abs(vx - ref_vx) > self.tolerance or abs(vy - ref_vy) > self.tolerance:
-                        raise ValueError(f"State violates velocity constraint at joint {joint_index}: bar {bar_index} does not move with bar {ref_bar}")
+        self._build_constraints()
 
-            # Check supports
-            for support_index, support in enumerate(self.supports):
-                px, py = self._current_point_on_bar_from_state(state, support.bar_index, support.s)
+        F = list(self.F)
 
-                theta = state[3 * support.bar_index + 2]
-                xd, yd, thetad = state[3 * n + 3 * support.bar_index : 3 * n + 3 * support.bar_index + 3]
-                vx = xd - support.s * self.bars[support.bar_index].length * np.sin(theta) * thetad
-                vy = yd + support.s * self.bars[support.bar_index].length * np.cos(theta) * thetad
+        if not F:
+            return
 
-                if not support.dof_in_x and abs(px - support.x) > self.tolerance:
-                    raise ValueError(f"State violates support {support_index} in x: got {px}, expected {support.x}")
+        # Compile the constraints and their Jacobian
+        # The required heyoka parameters are selected internally
+        constraints, jacobian = _compile_constraints(self.q, F, pars)
 
-                if not support.dof_in_y and abs(py - support.y) > self.tolerance:
-                    raise ValueError(f"State violates support {support_index} in y: got {py}, expected {support.y}")
+        # Evaluate the position and velocity constraints
+        position_residuals = constraints(position)
+        velocity_residuals = jacobian(position) @ velocity
 
-                if not support.dof_in_x and abs(vx) > self.tolerance:
-                    raise ValueError(f"State violates velocity constraint at support {support_index} in x: got {vx}, expected 0")
-
-                if not support.dof_in_y and abs(vy) > self.tolerance:
-                    raise ValueError(f"State violates velocity constraint at support {support_index} in y: got {vy}, expected 0")
-        else:
-            n_q = 3 * len(self.bars)
-
-            # Validate and split the numerical state.
-            state = np.asarray(state, dtype=float).ravel()
-
-            if state.size != 2 * n_q:
+        # Check the position constraints
+        for i, residual in enumerate(position_residuals):
+            if not np.isfinite(residual) or abs(residual) > self.tolerance:
                 raise ValueError(
-                    f"Expected state of length {2 * n_q}, "
-                    f"got {state.size}"
+                    f"Position constraint {i} violated: "
+                    f"residual = {residual}"
                 )
 
-            if not np.all(np.isfinite(state)):
-                raise ValueError("State contains non-finite values")
+        # Check the velocity constraints
+        for i, residual in enumerate(velocity_residuals):
+            if not np.isfinite(residual) or abs(residual) > self.tolerance:
+                raise ValueError(
+                    f"Velocity constraint {i} violated: "
+                    f"residual = {residual}"
+                )
 
-            # Build the symbolic coordinates and constraints.
-            # This works even before build_lagrange_eom() is called.
-            self._build_state_variables()
-            self._build_constraints()
+    def fix_state(
+        self,
+        state,
+        pars=None,
+        set_velocities_zero=False,
+        use_exact_endpoints=False,
+        tolerance=None,
+        maxiter=1000,
+    ):
+        """Project a bar-joint state onto its position and velocity constraints.
 
-            F = list(self.F)
+        Positions are corrected by minimizing a displacement objective, using
+        either a quadratic small-angle approximation or exact endpoint
+        displacement. Unless velocities are requested to be zero, they are
+        corrected using the generalized mass matrix.
 
-            if not F:
-                return
+        Args:
+            state (:class:`numpy.ndarray`): Coordinates followed by velocities,
+                in the ordering returned by :meth:`get_initial_state`.
 
-            # Construct the velocity-level constraints:
-            # dF/dt = J(q, p) @ qd
-            # All heyoka parameters remain symbolic here.
-            Fd = [
-                hy.sum([
-                    hy.diff(f, qj) * qdj
-                    for qj, qdj in zip(self.q, self.qd)
-                ])
-                for f in F
-            ]
+            pars (:class:`list` or :class:`numpy.ndarray`, optional): Values for
+                Heyoka parameters appearing in the constraints or bar lengths.
+                Default is ``None``.
 
-            # Compile position and velocity constraints together.
-            # The input ordering matches get_initial_state():
-            # [q0, q1, ..., qd0, qd1, ...].
-            constraint_func = hy.cfunc(
-                F + Fd,
-                vars=self.q + self.qd,
-                compact_mode=True
+            set_velocities_zero (:class:`bool`, optional): If ``True``, return
+                zero velocities instead of projecting the supplied velocities.
+                Default is ``False``.
+
+            use_exact_endpoints (:class:`bool`, optional): If ``True``, use the
+                exact endpoint-displacement objective for position correction;
+                otherwise use its quadratic small-angle approximation. Default
+                is ``False``.
+
+            tolerance (:class:`float`, optional): Constraint tolerance for
+                checking and correction. If omitted, ``self.tolerance`` is used.
+                Default is ``None``.
+
+            maxiter (:class:`int`, optional): Maximum iterations for the
+                position and velocity correction routines. Default is ``1000``.
+
+        Raises:
+            ValueError: If the tolerance is not positive and finite, the model
+                has not been built, or the bar lengths are not positive and
+                finite.
+
+        Returns:
+            :class:`numpy.ndarray`: Corrected coordinates followed by corrected
+            (or zero) velocities.
+        """
+
+        if tolerance is None:
+            tolerance = self.tolerance
+
+        if not np.isfinite(tolerance) or tolerance <= 0:
+            raise ValueError("tolerance must be positive and finite")
+
+        nq = 3 * len(self.bars)
+
+        if not self.bars or len(self.q) != nq or self.lagrangian is None:
+            raise ValueError("Build the model before calling fix_state")
+
+        q_initial = state[:nq]
+        qdot_initial = state[nq:]
+
+        F = list(self.F)
+
+        # Check position and velocity constraints once
+        position_valid = True
+        velocity_valid = True
+
+        if F:
+            constraints, jacobian = _compile_constraints(self.q, F, pars)
+
+            position_error = np.max(np.abs(constraints(q_initial)))
+            velocity_error = np.max(
+                np.abs(jacobian(q_initial) @ qdot_initial)
             )
 
-            # Evaluate using the numerical parameter values.
-            if pars is None:
-                values = constraint_func(state)
+            position_valid = (
+                np.isfinite(position_error) and position_error <= tolerance
+            )
+            velocity_valid = (
+                np.isfinite(velocity_error) and velocity_error <= tolerance
+            )
+
+        # If the state is valid, no correction is necessary
+        if position_valid and velocity_valid:
+            if set_velocities_zero:
+                return np.concatenate((q_initial, np.zeros(nq)))
+            return state.copy()
+
+        # Correct the configuration if necessary
+        if position_valid:
+            q_corrected = q_initial.copy()
+
+        else:
+            # Evaluate the bar lengths for the endpoint objective
+            length_expressions = []
+
+            for bar in self.bars:
+                length = bar.length
+
+                if not isinstance(length, hy.expression):
+                    length = hy.expression(float(length))
+
+                length_expressions.append(length)
+
+            length_func = hy.cfunc(length_expressions, vars=[], compact_mode=True)
+            length_pars = parameter_values(length_expressions, pars)
+            lengths = np.asarray(length_func([], pars=length_pars), dtype=float)
+
+            if not np.all(np.isfinite(lengths)) or np.any(lengths <= 0):
+                raise ValueError("Bar lengths must be positive and finite")
+
+            if use_exact_endpoints:
+                # Exact endpoint-displacement objective
+                def objective(candidate, reference):
+                    dq = candidate - reference
+                    translation = np.sum(dq[0::3]**2 + dq[1::3]**2)
+                    rotation = 0.5 * np.sum(lengths**2 * (1.0 - np.cos(dq[2::3])))
+                    return float(translation + rotation)
+
+                def gradient(candidate, reference):
+                    dq = candidate - reference
+                    result = np.zeros_like(dq)
+
+                    result[0::3] = 2.0 * dq[0::3]
+                    result[1::3] = 2.0 * dq[1::3]
+                    result[2::3] = (0.5 * lengths**2 * np.sin(dq[2::3]))
+
+                    return result
+
             else:
-                pars = np.asarray(pars, dtype=float).ravel()
+                # Quadratic small-angle approximation
+                R_diag = np.full(nq, 2.0)
+                R_diag[2::3] = lengths**2 / 2.0
 
-                if not np.all(np.isfinite(pars)):
-                    raise ValueError(
-                        "Parameters contain non-finite values"
-                    )
+                def objective(candidate, reference):
+                    dq = candidate - reference
+                    return 0.5 * np.dot(R_diag * dq, dq)
 
-                values = constraint_func(state, pars=pars)
+                def gradient(candidate, reference):
+                    return R_diag * (candidate - reference)
 
-            values = np.asarray(values, dtype=float)
+            q_corrected = fix_configuration(
+                q_initial,
+                self.q,
+                F,
+                pars=pars,
+                objective=objective,
+                gradient=gradient,
+                tolerance=tolerance,
+                maxiter=maxiter,
+            )
 
-            if not np.all(np.isfinite(values)):
-                raise ValueError(
-                    "Constraint evaluation produced non-finite values"
-                )
+        # Zero the velocities if requested
+        if set_velocities_zero:
+            return np.concatenate((q_corrected, np.zeros(nq)))
 
-            # The first half contains position residuals;
-            # the second half contains velocity residuals.
-            m = len(F)
-            position_residuals = values[:m]
-            velocity_residuals = values[m:]
+        # Use the mass matrix already constructed during ODE generation
+        if self.mass_matrix is None:
+            # Fallback if no mass matrix has been stored
+            self.mass_matrix = build_mass_matrix(self.lagrangian, self.qd)
 
-            # Check position constraints.
-            for i, residual in enumerate(position_residuals):
-                if abs(residual) > self.tolerance:
-                    raise ValueError(
-                        f"Position constraint {i} violated: "
-                        f"residual = {residual}"
-                    )
+        # To make it a cfunc, we expect a list
+        M_expressions = self.mass_matrix.ravel().tolist()
+        # Compile and evaluate the mass matrix
+        mass_func = hy.cfunc(M_expressions, vars=self.q, compact_mode=True)
+        mass_pars = parameter_values(M_expressions, pars)
+        # Now we can make it a matrix again
+        M = np.asarray(mass_func(q_corrected, pars=mass_pars),dtype=float).reshape(nq, nq)
 
-            # Check velocity constraints.
-            for i, residual in enumerate(velocity_residuals):
-                if abs(residual) > self.tolerance:
-                    raise ValueError(
-                        f"Velocity constraint {i} violated: "
-                        f"residual = {residual}"
-                    )
+        # Correct the velocities using the generalized mass matrix
+        qdot_corrected = fix_velocity(
+            q_corrected,
+            qdot_initial,
+            self.q,
+            F,
+            mass_matrix=M,
+            pars=pars,
+            tolerance=tolerance,
+            maxiter=maxiter,
+        )
+
+        return np.concatenate((q_corrected, qdot_corrected))
 
     def print_model(self):
         """Print a human-readable summary of the assembled model."""
