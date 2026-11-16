@@ -86,21 +86,8 @@ def build_Jdqd(J, q, qd):
 def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return_W=False):
     r"""Return constrained accelerations and the constraint multipliers.
 
-    The constrained acceleration is
-
-    .. math::
-
-        \ddot{q} = \ddot{q}_{\mathrm{free}} - M^{-1} J^T W^{-1}
-        \left(J \ddot{q}_{\mathrm{free}} + \dot{J} \dot{q}\right),
-
-    where
-
-    .. math::
-
-        W = J M^{-1} J^T.
-
-    this is simplified to:
-    The constrained acceleration is
+    After adding the acceleration contribution of any applied generalized force,
+    the constrained acceleration is
 
     .. math::
 
@@ -110,6 +97,7 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
 
     .. math::
 
+        \ddot{q}_{\mathrm{applied}} = \ddot{q}_{\mathrm{free}} + M^{-1} Q_{nc}, \\
         G = M^{-1} J^T, \qquad W = JG,
 
     and
@@ -128,8 +116,10 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
         M (:class:`numpy.ndarray` or sequence): Mass matrix :math:`M`.
         Jdqd (sequence): Product :math:`\dot J \dot q`.
         Q_nc (:class:`numpy.ndarray` or sequence, optional): Generalized applied forces,
-            in the same ordering as q. Entries may be symbolic
-            functions of q, qd, and time. Defaults to None.
+            in the same ordering as the generalized coordinates. Their
+            acceleration contribution is added to ``qdd_free`` by solving
+            ``M @ force_acc = Q_nc``. Entries may be symbolic expressions.
+            Defaults to None.
         return_W (:class:`bool`, optional): Whether to also return the Delassus
             matrix :math:`W`. Default is False.
 
@@ -227,7 +217,7 @@ def build_constraint_jacobian(F, q):
     return J
 
 
-def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, return_W=False):
+def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, return_W=False, return_M=False):
     r"""Assemble the first-order ODE system for the constrained dynamics.
 
     This helper forms the free-acceleration terms from the Lagrangian,
@@ -247,14 +237,15 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
             the Lagrange multiplier vector. Default is False.
         return_W (:class:`bool`, optional): Whether to also return the Delassus
             matrix :math:`W = J M^{-1} J^T`. Default is False.
+        return_M (:class:`bool`, optional): Whether to also return the symbolic
+            mass matrix. Default is False.
 
     Returns:
         :class:`list` or :class:`tuple`: The ODE system as pairs
-        ``(state_var, rhs_expr)``. If both options are False, this list is
-        returned directly. If only ``return_multipliers`` is True, returns
-        ``(ode_system, lambda_mult)``; if only ``return_W`` is True, returns
-        ``(ode_system, W)``; if both are True, returns
-        ``(ode_system, lambda_mult, W)``. The multiplier entries follow the
+        ``(state_var, rhs_expr)``. If all options are False, this list is
+        returned directly. Otherwise a tuple is returned, containing the ODE
+        system followed, in order, by any requested multiplier vector, Delassus
+        matrix, and mass matrix. The multiplier entries follow the
         constraint-row ordering in :math:`J`.
     """
     # Heyoka returns the Euler-Lagrange equations as ordered pairs of the form
@@ -301,13 +292,18 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
     for vel, acc in zip(qd, qdd):
         ode_system.append((vel, acc))
 
-    if return_multipliers:
-        if return_W:
-            return ode_system, lambda_mult, W
-        return ode_system, lambda_mult
-    if return_W:
-        return ode_system, W
+    # Return the exact touple the user has requested
+    results = [ode_system]
 
-    return ode_system
+    if return_multipliers:
+        results.append(lambda_mult)
+    if return_W:
+        results.append(W)
+    if return_M:
+        results.append(M)
+    if len(results) == 1:
+        return results[0]
+    
+    return tuple(results)
 
 
