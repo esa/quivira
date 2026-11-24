@@ -299,6 +299,7 @@ def animate_bar_model(
     if save_animation:
         anim.save("animation.gif", writer="pillow", fps=30, dpi=150)
     else:
-        # Keep the original, working GitHub HTML display mechanism.
-        display(HTML(anim.to_jshtml()))
+        # An embedded H.264 video is far smaller than to_jshtml(), which stores
+        # every frame as a PNG, and it also plays in VS Code (unlike WebM).
+        display(HTML(anim.to_html5_video()))
     plt.close(fig)

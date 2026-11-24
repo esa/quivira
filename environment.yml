@@ -17,5 +17,6 @@ dependencies:
   - ipykernel
   - jupyter
   - matplotlib
+  - ffmpeg
   - pip:
       - -e .
