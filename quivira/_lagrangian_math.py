@@ -256,11 +256,8 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
     # Heyoka returns the Euler-Lagrange equations as ordered pairs of the form
     # (state_variable, rhs_expression). Keep only the entries for the velocity
     # variables so the free acceleration matches the ordering in qd.
-    start = time.perf_counter()
-    free_system = hy.lagrangian(lagrangian, q, qd)
-    elapsed = time.perf_counter() - start
-    if verbose:
-        print(f"hy.lagrangian took {elapsed:.6f} seconds")
+    with timed("hy.lagrangian", verbose):
+        free_system = hy.lagrangian(lagrangian, q, qd)
     qdd_free = []
     for variable, rhs in free_system:
         if variable in qd:
@@ -269,31 +266,19 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
 
     # Build the mass matrix, the constraint Jacobian, and the chain-rule term
     # Jdot qd that appears in the acceleration constraint.
-    start = time.perf_counter()
-    M = build_mass_matrix(lagrangian, qd)
-    elapsed = time.perf_counter() - start
-    if verbose:
-        print(f"build_mass_matrix took {elapsed:.6f} seconds")
-    start = time.perf_counter()
-    J = build_constraint_jacobian(F, q)
-    elapsed = time.perf_counter() - start
-    if verbose:
-        print(f"build_constraint_jacobian took {elapsed:.6f} seconds")
-    start = time.perf_counter()
-    Jdqd = build_Jdqd(J, q, qd)
-    elapsed = time.perf_counter() - start
-    if verbose:
-        print(f"build_Jdqd took {elapsed:.6f} seconds")
+    with timed("build_mass_matrix", verbose):
+        M = build_mass_matrix(lagrangian, qd)
+    with timed("build_constraint_jacobian", verbose):
+        J = build_constraint_jacobian(F, q)
+    with timed("build_Jdqd", verbose):
+        Jdqd = build_Jdqd(J, q, qd)
 
     # Enforce the algebraic constraints by projecting the free acceleration onto the constraint-consistent subspace.
-    start = time.perf_counter()
-    if return_W:
-        qdd, lambda_mult, W = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc, return_W=True, verbose=verbose)
-    else:
-        qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc, verbose=verbose)
-    elapsed = time.perf_counter() - start
-    if verbose:
-        print(f"find_constrained_accelerations took {elapsed:.6f} seconds")
+    with timed("find_constrained_accelerations", verbose):
+        if return_W:
+            qdd, lambda_mult, W = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc, return_W=True, verbose=verbose)
+        else:
+            qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc, verbose=verbose)
 
     # Turn the second-order system into the first-order form expected by the integrator: qdot = v and vdot = qdd.
     ode_system = []
