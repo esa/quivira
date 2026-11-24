@@ -11,10 +11,11 @@ from contextlib import contextmanager
 import time
 
 @contextmanager
-def timed(name):
+def timed(name, verbose=False):
     start = time.perf_counter()
     yield
-    print(f"{name} took {time.perf_counter() - start:.6f} seconds")
+    if verbose:
+        print(f"{name} took {time.perf_counter() - start:.6f} seconds")
 
 def build_mass_matrix(lagrangian, qd):
     r"""Return the symbolic mass matrix for a Lagrangian.
@@ -83,7 +84,7 @@ def build_Jdqd(J, q, qd):
     # Multiply by qd again
     return derivative @ qd
 
-def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return_W=False):
+def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return_W=False, verbose=False):
     r"""Return constrained accelerations and the constraint multipliers.
 
     After adding the acceleration contribution of any applied generalized force,
@@ -122,6 +123,8 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
             Defaults to None.
         return_W (:class:`bool`, optional): Whether to also return the Delassus
             matrix :math:`W`. Default is False.
+        verbose (:class:`bool`, optional): Whether to print elapsed times for
+            equation-assembly steps. Default is False.
 
     Returns:
         :class:`tuple`: By default, a pair ``(qdd, lambda_mult)`` containing the
@@ -149,11 +152,11 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
             raise ValueError("Q_nc must have the same shape as qdd_free")
 
     # Factorize M once and reuse the factorization for all subsequent solves.
-    with timed("factorize M"):
+    with timed("factorize M", verbose):
         M_factors = gaussian_factorize(M)
 
     # Add generalized applied forces by solving M @ force_acc = Q_nc.
-    with timed("force contribution"):
+    with timed("force contribution", verbose):
         if Q_nc is not None:
             force_acc = gaussian_solve_factored(M_factors, Q_nc).reshape(-1)
             qdd_free = qdd_free + force_acc
@@ -167,26 +170,26 @@ def find_constrained_accelerations(qdd_free, J, M, Jdqd,  Q_nc = None, *, return
 
     # Calculate G = M^-1 @ J.T without explicitly inverting M.
     # Solve M @ G = J.T column by column, reusing the factorization.
-    with timed("solve M @ G = J.T"):
+    with timed("solve M @ G = J.T", verbose):
         G = np.empty((n, m), dtype=object)
         for col in range(m):
             rhs = J[col, :]
             G[:, col] = gaussian_solve_factored(M_factors, rhs).reshape(-1)
 
     # Construct the Delassus matrix W = J @ M^-1 @ J.T = J @ G.
-    with timed("build W"):
+    with timed("build W", verbose):
         W = sparse_matmul(J, G)
 
     # Construct the right-hand side of W @ lambda = rhs.
-    with timed("build rhs"):
+    with timed("build rhs", verbose):
         rhs = -(J @ qdd_free + Jdqd)
 
     # Solve for the Lagrange multipliers.
-    with timed("gaussian_elimination"):
+    with timed("gaussian_elimination", verbose):
         lambda_mult = gaussian_elimination(W, rhs).reshape(-1)
 
     # Calculate constrained accelerations, reusing G = M^-1 @ J.T.
-    with timed("acceleration correction"):
+    with timed("acceleration correction", verbose):
         correction = sparse_matmul(G, lambda_mult.reshape(-1, 1)).reshape(-1)
         qdd = qdd_free + correction
     
@@ -285,9 +288,9 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
     # Enforce the algebraic constraints by projecting the free acceleration onto the constraint-consistent subspace.
     start = time.perf_counter()
     if return_W:
-        qdd, lambda_mult, W = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc, return_W=True)
+        qdd, lambda_mult, W = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc, return_W=True, verbose=verbose)
     else:
-        qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc)
+        qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc, verbose=verbose)
     elapsed = time.perf_counter() - start
     if verbose:
         print(f"find_constrained_accelerations took {elapsed:.6f} seconds")
