@@ -488,7 +488,6 @@ def sparse_matmul(A, B):
 
     m, n = A.shape
     n2, p = B.shape
-    print(f"my_matmul: A{A.shape} @ B{B.shape} -> C({m}, {p})")
 
     if n != n2:
         raise ValueError("Incompatible matrix shapes")
