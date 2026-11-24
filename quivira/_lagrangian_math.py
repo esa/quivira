@@ -217,7 +217,7 @@ def build_constraint_jacobian(F, q):
     return J
 
 
-def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, return_W=False, return_M=False):
+def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, return_W=False, return_M=False, verbose=False):
     r"""Assemble the first-order ODE system for the constrained dynamics.
 
     This helper forms the free-acceleration terms from the Lagrangian,
@@ -239,6 +239,8 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
             matrix :math:`W = J M^{-1} J^T`. Default is False.
         return_M (:class:`bool`, optional): Whether to also return the symbolic
             mass matrix. Default is False.
+        verbose (:class:`bool`, optional): Whether to print elapsed times for
+            equation-assembly steps. Default is False.
 
     Returns:
         :class:`list` or :class:`tuple`: The ODE system as pairs
@@ -254,7 +256,8 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
     start = time.perf_counter()
     free_system = hy.lagrangian(lagrangian, q, qd)
     elapsed = time.perf_counter() - start
-    print(f"hy.lagrangian took {elapsed:.6f} seconds")
+    if verbose:
+        print(f"hy.lagrangian took {elapsed:.6f} seconds")
     qdd_free = []
     for variable, rhs in free_system:
         if variable in qd:
@@ -266,15 +269,18 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
     start = time.perf_counter()
     M = build_mass_matrix(lagrangian, qd)
     elapsed = time.perf_counter() - start
-    print(f"build_mass_matrix took {elapsed:.6f} seconds")
+    if verbose:
+        print(f"build_mass_matrix took {elapsed:.6f} seconds")
     start = time.perf_counter()
     J = build_constraint_jacobian(F, q)
     elapsed = time.perf_counter() - start
-    print(f"build_constraint_jacobian took {elapsed:.6f} seconds")
+    if verbose:
+        print(f"build_constraint_jacobian took {elapsed:.6f} seconds")
     start = time.perf_counter()
     Jdqd = build_Jdqd(J, q, qd)
     elapsed = time.perf_counter() - start
-    print(f"build_Jdqd took {elapsed:.6f} seconds")
+    if verbose:
+        print(f"build_Jdqd took {elapsed:.6f} seconds")
 
     # Enforce the algebraic constraints by projecting the free acceleration onto the constraint-consistent subspace.
     start = time.perf_counter()
@@ -283,7 +289,8 @@ def lagrange_eom(lagrangian, F, q, qd, Q_nc=None, *, return_multipliers=False, r
     else:
         qdd, lambda_mult = find_constrained_accelerations(qdd_free, J, M, Jdqd, Q_nc)
     elapsed = time.perf_counter() - start
-    print(f"find_constrained_accelerations took {elapsed:.6f} seconds")
+    if verbose:
+        print(f"find_constrained_accelerations took {elapsed:.6f} seconds")
 
     # Turn the second-order system into the first-order form expected by the integrator: qdot = v and vdot = qdd.
     ode_system = []

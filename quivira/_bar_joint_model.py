@@ -552,7 +552,7 @@ class bar_joint_model:
         """
         self.external_forces.append(external_force(bar_index, s, fx, fy, torque))
 
-    def build_lagrange_eom(self, return_multipliers=False, return_W=False):
+    def build_lagrange_eom(self, return_multipliers=False, return_W=False, verbose=False):
         """Assemble the symbolic equations of motion for the model.
 
             This method builds the system-level Lagrangian, constraint residuals, and
@@ -571,6 +571,9 @@ class bar_joint_model:
                     constraint Jacobian and ``M`` is the mass matrix. Default is
                     ``False``.
 
+                verbose (:class:`bool`, optional): If ``True``, print the elapsed
+                    time for each equation-assembly step. Default is ``False``.
+
             Returns:
                 :class:`list` or :class:`tuple`: The ODE system as pairs
                 ``(state_var, rhs_expr)``. If neither option is enabled, the
@@ -585,7 +588,7 @@ class bar_joint_model:
         self._build_lagrangian()
         self._build_constraints()
         self._build_external_forces()
-        result = qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, self.Q_nc, return_multipliers=return_multipliers, return_W=return_W, return_M=True)
+        result = qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, self.Q_nc, return_multipliers=return_multipliers, return_W=return_W, return_M=True, verbose=verbose)
         # Save the symbolic mass matrix
         self.mass_matrix = result[-1]
         # Now return only the return values of build_lagrange_eom(), not the mass matrix

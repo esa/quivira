@@ -170,3 +170,4 @@ class LagrangianMathTests(_ut.TestCase):
         self.assertEqual(multipliers.shape, (1,))
         self.assertEqual(W.shape, (1, 1))
         self.assertAlmostEqual(float(sp.N(hy.to_sympy(W[0, 0]))), 2.0, places=12)
+
