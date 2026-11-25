@@ -940,7 +940,7 @@ class bar_joint_model:
                     f"dof_in_y={support.dof_in_y}"
                 )
 
-        lines.append("\nInitial state:")
+        lines.append("\nState:")
         for i, bar in enumerate(self.bars):
             if bar.x0 is None or bar.y0 is None or bar.theta0 is None:
                 lines.append(f"  Bar {i}: Not set")
