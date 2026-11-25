@@ -628,7 +628,8 @@ class bar_joint_model:
                 self.bars[i].xd0 = float(xd0)
                 self.bars[i].yd0 = float(yd0)
                 self.bars[i].thetad0 = float(thetad0)
-            self.check_constraint_fulfillment(self.get_initial_state())
+            if not self.check_constraint_fulfillment(self.get_initial_state()):
+                raise ValueError("Initial state violates position or velocity constraints")
             return
 
         if len(initial_state) == len(self.bars):
@@ -648,7 +649,8 @@ class bar_joint_model:
                 self.bars[i].yd0 = float(yd0)
                 self.bars[i].thetad0 = float(thetad0)
 
-            self.check_constraint_fulfillment(self.get_initial_state())
+            if not self.check_constraint_fulfillment(self.get_initial_state()):
+                raise ValueError("Initial state violates position or velocity constraints")
             return
 
         raise ValueError(
@@ -671,7 +673,7 @@ class bar_joint_model:
             qd0.extend([bar.xd0, bar.yd0, bar.thetad0])
         return q0 + qd0
 
-    def check_constraint_fulfillment(self, state, pars=None):
+    def check_constraint_fulfillment(self, state, pars=None, verbose=False):
         """Check position and velocity constraints for a state.
 
         The state is split into generalized coordinates followed by generalized
@@ -689,9 +691,13 @@ class bar_joint_model:
                 Heyoka parameters appearing in the constraints. Default is
                 ``None``.
 
-        Raises:
-            ValueError: If a position or velocity constraint is non-finite or
-                exceeds the model tolerance.
+            verbose (:class:`bool`, optional): If ``True``, print whether each
+                position and velocity constraint is fulfilled. Default is
+                ``False``.
+
+        Returns:
+            :class:`bool`: ``True`` if all position and velocity constraints
+            are fulfilled, otherwise ``False``.
         """
 
         nq = 3 * len(self.bars)
@@ -709,7 +715,7 @@ class bar_joint_model:
         F = list(self.F)
 
         if not F:
-            return
+            return True
 
         # Compile the constraints and their Jacobian
         # The required heyoka parameters are selected internally
@@ -719,21 +725,23 @@ class bar_joint_model:
         position_residuals = constraints(position)
         velocity_residuals = jacobian(position) @ velocity
 
-        # Check the position constraints
-        for i, residual in enumerate(position_residuals):
-            if not np.isfinite(residual) or abs(residual) > self.tolerance:
-                raise ValueError(
-                    f"Position constraint {i} violated: "
-                    f"residual = {residual}"
-                )
+        fulfilled_all = True
 
-        # Check the velocity constraints
+        for i, residual in enumerate(position_residuals):
+            fulfilled = np.isfinite(residual) and abs(residual) <= self.tolerance
+            fulfilled_all = fulfilled_all and fulfilled
+            if verbose:
+                status = "fulfilled" if fulfilled else "not fulfilled"
+                print(f"Position constraint {i}: {status} (residual = {residual})")
+
         for i, residual in enumerate(velocity_residuals):
-            if not np.isfinite(residual) or abs(residual) > self.tolerance:
-                raise ValueError(
-                    f"Velocity constraint {i} violated: "
-                    f"residual = {residual}"
-                )
+            fulfilled = np.isfinite(residual) and abs(residual) <= self.tolerance
+            fulfilled_all = fulfilled_all and fulfilled
+            if verbose:
+                status = "fulfilled" if fulfilled else "not fulfilled"
+                print(f"Velocity constraint {i}: {status} (residual = {residual})")
+
+        return bool(fulfilled_all)
 
     def fix_state(
         self,
