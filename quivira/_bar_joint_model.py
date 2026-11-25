@@ -587,7 +587,7 @@ class bar_joint_model:
 
         return original_results
 
-    def set_state(self, state):
+    def set_state(self, state, pars=None):
         """Set bar poses and velocities from a flattened or per-bar state.
 
         Args:
@@ -595,6 +595,10 @@ class bar_joint_model:
                 state ordered as in :meth:`get_state`, or a
                 sequence with one six-value state
                 ``[x0, y0, theta0, xd0, yd0, thetad0]`` per bar.
+
+            pars (:class:`list` or :class:`numpy.ndarray`, optional): Values for
+                Heyoka parameters appearing in the constraints. Default is
+                ``None``.
 
         Raises:
             ValueError: If the input shape is invalid or the assigned state
@@ -617,7 +621,7 @@ class bar_joint_model:
                 self.bars[i].xd0 = float(xd0)
                 self.bars[i].yd0 = float(yd0)
                 self.bars[i].thetad0 = float(thetad0)
-            if not self.check_constraint_fulfillment(self.get_state()):
+            if not self.check_constraint_fulfillment(self.get_state(), pars=pars):
                 raise ValueError("State violates position or velocity constraints")
             return
 
@@ -638,7 +642,7 @@ class bar_joint_model:
                 self.bars[i].yd0 = float(yd0)
                 self.bars[i].thetad0 = float(thetad0)
 
-            if not self.check_constraint_fulfillment(self.get_state()):
+            if not self.check_constraint_fulfillment(self.get_state(), pars=pars):
                 raise ValueError("State violates position or velocity constraints")
             return
 
@@ -646,9 +650,9 @@ class bar_joint_model:
             f"Expected state length {6 * len(self.bars)}, got {len(state)}"
         )
 
-    def set_initial_state(self, initial_state):
+    def set_initial_state(self, initial_state, pars=None):
         """Set the state using the legacy method name."""
-        return self.set_state(initial_state)
+        return self.set_state(initial_state, pars=pars)
 
     def get_state(self):
         """Return the stacked generalized coordinates and velocities.
