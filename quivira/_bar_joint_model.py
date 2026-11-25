@@ -594,7 +594,7 @@ class bar_joint_model:
                 f"got {state_array.shape}"
             )
 
-        if not self.check_constraint_fulfillment(self.get_state(), pars=pars):
+        if not self.check_state(self.get_state(), pars=pars):
             raise ValueError("State violates position or velocity constraints")
 
     def get_state(self):
@@ -625,8 +625,8 @@ class bar_joint_model:
             qd0.extend([bar.xd0, bar.yd0, bar.thetad0])
         return q0 + qd0
 
-    def check_constraint_fulfillment(self, state, pars=None, verbose=False):
-        """Check position and velocity constraints for a state.
+    def check_state(self, state, pars=None, verbose=False):
+        """Check whether a state satisfies its position and velocity constraints.
 
         The state is split into generalized coordinates followed by generalized
         velocities. Both the position residuals and the velocity residuals
