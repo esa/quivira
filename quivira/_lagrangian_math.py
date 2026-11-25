@@ -71,6 +71,9 @@ def build_Jdqd(J, q, qd):
     q = list(q)
     qd = np.asarray(qd, dtype=object)
 
+    if J.shape[0] == 0:
+        return np.empty(0, dtype=object)
+
     # First construct J * qd
     Jqd = J @ qd
 
@@ -213,6 +216,9 @@ def build_constraint_jacobian(F, q):
     Returns:
         :class:`numpy.ndarray`: Jacobian matrix with shape ``[m, n]``.
     """
+    if len(F) == 0:
+        return np.empty((0, len(q)), dtype=object)
+
     # Differentiate each scalar constraint with respect to each generalized
     # coordinate, producing the symbolic Jacobian matrix.
     jacobian = hy.diff_tensors(F, diff_args=q, diff_order=1)

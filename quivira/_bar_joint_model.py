@@ -72,11 +72,11 @@ class bar:
         y0 = (start_y + end_y) / 2.0
 
         new_bar = cls(length, mass)
-        new_bar.set_bar_attitude(x0, y0, theta0)
+        new_bar.set_bar_pose(x0, y0, theta0)
 
         return new_bar
 
-    def set_bar_attitude(self, x0, y0, theta0):
+    def set_bar_pose(self, x0, y0, theta0):
         """Set the center position and angle of the bar.
 
         Args:
@@ -90,7 +90,8 @@ class bar:
         self.y0 = y0
         self.theta0 = theta0
 
-    set_init_bar_attitude = set_bar_attitude
+    set_bar_attitude = set_bar_pose
+    set_init_bar_attitude = set_bar_pose
 
     def set_bar_velocities(self, xd0, yd0, thetad0):
         """Set the translational and angular velocities of the bar.
@@ -261,10 +262,10 @@ class bar_joint_model:
             mass (:class:`float` or :class:`heyoka.expression`): Bar mass.
         """
         self.add_bar(length, mass)
-        self.set_bar_attitude(-1, x0, y0, theta0)
+        self.set_bar_pose(-1, x0, y0, theta0)
 
-    def set_bar_attitude(self, bar_index, x0, y0, theta0):
-        """Set the center position and orientation of a bar.
+    def set_bar_pose(self, bar_index, x0, y0, theta0):
+        """Set the position and orientation of a bar.
 
         Args:
             bar_index (:class:`int`): Index of the target bar.
@@ -275,9 +276,10 @@ class bar_joint_model:
 
             theta0 (:class:`float`): Angle of the bar.
         """
-        self.bars[bar_index].set_bar_attitude(x0, y0, theta0)
+        self.bars[bar_index].set_bar_pose(x0, y0, theta0)
 
-    set_init_bar_attitude = set_bar_attitude
+    set_bar_attitude = set_bar_pose
+    set_init_bar_attitude = set_bar_pose
 
     def set_bar_velocities(self, bar_index, xd0, yd0, thetad0):
         """Set the translational and angular velocities of a bar.
@@ -294,6 +296,28 @@ class bar_joint_model:
         self.bars[bar_index].set_bar_velocities(xd0, yd0, thetad0)
 
     set_init_bar_velocities = set_bar_velocities
+
+    def set_bar_state(self, bar_index, state):
+        """Set one bar's position, orientation, and velocities.
+
+        Args:
+            bar_index (:class:`int`): Index of the target bar.
+
+            state (:class:`list` or :class:`numpy.ndarray`): Six values in the
+                order ``[x, y, theta, xd, yd, thetad]``.
+
+        Raises:
+            ValueError: If the state does not contain six values.
+        """
+        bar_state = np.asarray(state, dtype=float).ravel()
+        if bar_state.size != 6:
+            raise ValueError(
+                f"State for bar {bar_index} must contain [x, y, theta, xd, yd, thetad]"
+            )
+
+        bar = self.bars[bar_index]
+        bar.x0, bar.y0, bar.theta0 = bar_state[:3]
+        bar.xd0, bar.yd0, bar.thetad0 = bar_state[3:]
 
     def add_bar_from_point_pair(self, start, end, mass_per_length=1.0):
         """Append a bar constructed from its endpoints.
@@ -604,51 +628,30 @@ class bar_joint_model:
             ValueError: If the input shape is invalid or the assigned state
                 violates a position or velocity constraint.
         """
-        flat_state = np.asarray(state, dtype=float).ravel()
+        state_array = np.asarray(state, dtype=float)
+        n_bars = len(self.bars)
 
-        if flat_state.size == 6 * len(self.bars):
-            q_size = 3 * len(self.bars)
-            for i in range(len(self.bars)):
-                q_offset = 3 * i
-                qd_offset = q_size + 3 * i
+        if state_array.shape == (n_bars, 6):
+            for bar_index, bar_state in enumerate(state_array):
+                self.set_bar_state(bar_index, bar_state)
+        elif state_array.ndim == 1 and state_array.size == 6 * n_bars:
+            q_size = 3 * n_bars
+            for bar_index in range(n_bars):
+                q_offset = 3 * bar_index
+                qd_offset = q_size + 3 * bar_index
+                bar_state = np.concatenate((
+                    state_array[q_offset : q_offset + 3],
+                    state_array[qd_offset : qd_offset + 3],
+                ))
+                self.set_bar_state(bar_index, bar_state)
+        else:
+            raise ValueError(
+                f"Expected state shape ({n_bars}, 6) or length {6 * n_bars}, "
+                f"got {state_array.shape}"
+            )
 
-                x0, y0, theta0 = flat_state[q_offset : q_offset + 3]
-                xd0, yd0, thetad0 = flat_state[qd_offset : qd_offset + 3]
-
-                self.bars[i].x0 = float(x0)
-                self.bars[i].y0 = float(y0)
-                self.bars[i].theta0 = float(theta0)
-                self.bars[i].xd0 = float(xd0)
-                self.bars[i].yd0 = float(yd0)
-                self.bars[i].thetad0 = float(thetad0)
-            if not self.check_constraint_fulfillment(self.get_state(), pars=pars):
-                raise ValueError("State violates position or velocity constraints")
-            return
-
-        if len(state) == len(self.bars):
-            for i, bar_state in enumerate(state):
-                state_array = np.asarray(bar_state, dtype=float).ravel()
-                if state_array.size != 6:
-                    raise ValueError(
-                        f"State for bar {i} must contain [x0, y0, theta0, xd0, yd0, thetad0]"
-                    )
-
-                x0, y0, theta0, xd0, yd0, thetad0 = state_array
-
-                self.bars[i].x0 = float(x0)
-                self.bars[i].y0 = float(y0)
-                self.bars[i].theta0 = float(theta0)
-                self.bars[i].xd0 = float(xd0)
-                self.bars[i].yd0 = float(yd0)
-                self.bars[i].thetad0 = float(thetad0)
-
-            if not self.check_constraint_fulfillment(self.get_state(), pars=pars):
-                raise ValueError("State violates position or velocity constraints")
-            return
-
-        raise ValueError(
-            f"Expected state length {6 * len(self.bars)}, got {len(state)}"
-        )
+        if not self.check_constraint_fulfillment(self.get_state(), pars=pars):
+            raise ValueError("State violates position or velocity constraints")
 
     def set_initial_state(self, initial_state, pars=None):
         """Set the state using the legacy method name."""
@@ -660,7 +663,19 @@ class bar_joint_model:
         Returns:
             list: State vector containing ``[x0, y0, theta0, xd0, yd0, thetad0]``
             for each bar.
+
+        Raises:
+            ValueError: If any bar does not have a pose.
         """
+        missing_bars = [
+            i for i, bar in enumerate(self.bars)
+            if any(value is None for value in (bar.x0, bar.y0, bar.theta0))
+        ]
+        if missing_bars:
+            raise ValueError(
+                f"Bar poses must be set before retrieving the state; missing for bars {missing_bars}"
+            )
+
         q0 = []
         for bar in self.bars:
             q0.extend([bar.x0, bar.y0, bar.theta0])
