@@ -90,9 +90,6 @@ class bar:
         self.y0 = y0
         self.theta0 = theta0
 
-    set_bar_attitude = set_bar_pose
-    set_init_bar_attitude = set_bar_pose
-
     def set_bar_velocities(self, xd0, yd0, thetad0):
         """Set the translational and angular velocities of the bar.
 
@@ -106,8 +103,6 @@ class bar:
         self.xd0 = xd0
         self.yd0 = yd0
         self.thetad0 = thetad0
-
-    set_init_bar_velocities = set_bar_velocities
 
 class joint:
     """Constraint tying multiple points on different bars to a common location.
@@ -263,61 +258,6 @@ class bar_joint_model:
         """
         self.add_bar(length, mass)
         self.set_bar_pose(-1, x0, y0, theta0)
-
-    def set_bar_pose(self, bar_index, x0, y0, theta0):
-        """Set the position and orientation of a bar.
-
-        Args:
-            bar_index (:class:`int`): Index of the target bar.
-
-            x0 (:class:`float`): x coordinate of the bar center.
-
-            y0 (:class:`float`): y coordinate of the bar center.
-
-            theta0 (:class:`float`): Angle of the bar.
-        """
-        self.bars[bar_index].set_bar_pose(x0, y0, theta0)
-
-    set_bar_attitude = set_bar_pose
-    set_init_bar_attitude = set_bar_pose
-
-    def set_bar_velocities(self, bar_index, xd0, yd0, thetad0):
-        """Set the translational and angular velocities of a bar.
-
-        Args:
-            bar_index (:class:`int`): Index of the target bar.
-
-            xd0 (:class:`float`): x velocity of the center.
-
-            yd0 (:class:`float`): y velocity of the center.
-
-            thetad0 (:class:`float`): Angular velocity.
-        """
-        self.bars[bar_index].set_bar_velocities(xd0, yd0, thetad0)
-
-    set_init_bar_velocities = set_bar_velocities
-
-    def set_bar_state(self, bar_index, state):
-        """Set one bar's position, orientation, and velocities.
-
-        Args:
-            bar_index (:class:`int`): Index of the target bar.
-
-            state (:class:`list` or :class:`numpy.ndarray`): Six values in the
-                order ``[x, y, theta, xd, yd, thetad]``.
-
-        Raises:
-            ValueError: If the state does not contain six values.
-        """
-        bar_state = np.asarray(state, dtype=float).ravel()
-        if bar_state.size != 6:
-            raise ValueError(
-                f"State for bar {bar_index} must contain [x, y, theta, xd, yd, thetad]"
-            )
-
-        bar = self.bars[bar_index]
-        bar.x0, bar.y0, bar.theta0 = bar_state[:3]
-        bar.xd0, bar.yd0, bar.thetad0 = bar_state[3:]
 
     def add_bar_from_point_pair(self, start, end, mass_per_length=1.0):
         """Append a bar constructed from its endpoints.
@@ -565,51 +505,55 @@ class bar_joint_model:
         """
         self.external_forces.append(external_force(bar_index, s, fx, fy, torque))
 
-    def build_lagrange_eom(self, return_multipliers=False, return_W=False, verbose=False):
-        """Assemble the symbolic equations of motion for the model.
+    def set_bar_pose(self, bar_index, x0, y0, theta0):
+        """Set the position and orientation of a bar.
 
-            This method builds the system-level Lagrangian, constraint residuals, and
-            external-force terms, then returns the equivalent symbolic first-order
-            ODE system for numerical integration. When ``return_multipliers`` or
-            ``return_W`` is enabled, the corresponding constraint quantities are
-            included in the return value.
+        Args:
+            bar_index (:class:`int`): Index of the target bar.
 
-            Args:
-                return_multipliers (:class:`bool`, optional): If ``True``, also
-                    return the symbolic Lagrange multiplier vector associated with
-                    the algebraic constraints. Default is ``False``.
+            x0 (:class:`float`): x coordinate of the bar center.
 
-                return_W (:class:`bool`, optional): If ``True``, also return the
-                    Delassus matrix :math:`W = J M^{-1} J^T`, where ``J`` is the
-                    constraint Jacobian and ``M`` is the mass matrix. Default is
-                    ``False``.
+            y0 (:class:`float`): y coordinate of the bar center.
 
-                verbose (:class:`bool`, optional): If ``True``, print the elapsed
-                    time for each equation-assembly step. Default is ``False``.
+            theta0 (:class:`float`): Angle of the bar.
+        """
+        self.bars[bar_index].set_bar_pose(x0, y0, theta0)
 
-            Returns:
-                :class:`list` or :class:`tuple`: The ODE system as pairs
-                ``(state_var, rhs_expr)``. If neither option is enabled, the
-                function returns the ODE system directly. If
-                ``return_multipliers`` is ``True``, it returns
-                ``(ode_system, lambda_mult)``; if ``return_W`` is ``True``, it
-                returns ``(ode_system, W)``; and if both are ``True``, it returns
-                ``(ode_system, lambda_mult, W)``. The multiplier entries follow the
-                ordering of the constraint residuals in ``self.F``.
-            """
-        self._build_state_variables()
-        self._build_lagrangian()
-        self._build_constraints()
-        self._build_external_forces()
-        result = qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, self.Q_nc, return_multipliers=return_multipliers, return_W=return_W, return_M=True, verbose=verbose)
-        # Save the symbolic mass matrix
-        self.mass_matrix = result[-1]
-        # Now return only the return values of build_lagrange_eom(), not the mass matrix
-        original_results = result[:-1]
-        if len(original_results) == 1:
-            return original_results[0]
+    def set_bar_velocities(self, bar_index, xd0, yd0, thetad0):
+        """Set the translational and angular velocities of a bar.
 
-        return original_results
+        Args:
+            bar_index (:class:`int`): Index of the target bar.
+
+            xd0 (:class:`float`): x velocity of the center.
+
+            yd0 (:class:`float`): y velocity of the center.
+
+            thetad0 (:class:`float`): Angular velocity.
+        """
+        self.bars[bar_index].set_bar_velocities(xd0, yd0, thetad0)
+
+    def set_bar_state(self, bar_index, state):
+        """Set one bar's position, orientation, and velocities.
+
+        Args:
+            bar_index (:class:`int`): Index of the target bar.
+
+            state (:class:`list` or :class:`numpy.ndarray`): Six values in the
+                order ``[x, y, theta, xd, yd, thetad]``.
+
+        Raises:
+            ValueError: If the state does not contain six values.
+        """
+        bar_state = np.asarray(state, dtype=float).ravel()
+        if bar_state.size != 6:
+            raise ValueError(
+                f"State for bar {bar_index} must contain [x, y, theta, xd, yd, thetad]"
+            )
+
+        bar = self.bars[bar_index]
+        bar.x0, bar.y0, bar.theta0 = bar_state[:3]
+        bar.xd0, bar.yd0, bar.thetad0 = bar_state[3:]
 
     def set_state(self, state, pars=None):
         """Set bar poses and velocities from a flattened or per-bar state.
@@ -653,10 +597,6 @@ class bar_joint_model:
         if not self.check_constraint_fulfillment(self.get_state(), pars=pars):
             raise ValueError("State violates position or velocity constraints")
 
-    def set_initial_state(self, initial_state, pars=None):
-        """Set the state using the legacy method name."""
-        return self.set_state(initial_state, pars=pars)
-
     def get_state(self):
         """Return the stacked generalized coordinates and velocities.
 
@@ -684,8 +624,6 @@ class bar_joint_model:
         for bar in self.bars:
             qd0.extend([bar.xd0, bar.yd0, bar.thetad0])
         return q0 + qd0
-
-    get_initial_state = get_state
 
     def check_constraint_fulfillment(self, state, pars=None, verbose=False):
         """Check position and velocity constraints for a state.
@@ -942,6 +880,52 @@ class bar_joint_model:
         )
 
         return np.concatenate((q_corrected, qdot_corrected))
+
+    def build_lagrange_eom(self, return_multipliers=False, return_W=False, verbose=False):
+        """Assemble the symbolic equations of motion for the model.
+
+            This method builds the system-level Lagrangian, constraint residuals, and
+            external-force terms, then returns the equivalent symbolic first-order
+            ODE system for numerical integration. When ``return_multipliers`` or
+            ``return_W`` is enabled, the corresponding constraint quantities are
+            included in the return value.
+
+            Args:
+                return_multipliers (:class:`bool`, optional): If ``True``, also
+                    return the symbolic Lagrange multiplier vector associated with
+                    the algebraic constraints. Default is ``False``.
+
+                return_W (:class:`bool`, optional): If ``True``, also return the
+                    Delassus matrix :math:`W = J M^{-1} J^T`, where ``J`` is the
+                    constraint Jacobian and ``M`` is the mass matrix. Default is
+                    ``False``.
+
+                verbose (:class:`bool`, optional): If ``True``, print the elapsed
+                    time for each equation-assembly step. Default is ``False``.
+
+            Returns:
+                :class:`list` or :class:`tuple`: The ODE system as pairs
+                ``(state_var, rhs_expr)``. If neither option is enabled, the
+                function returns the ODE system directly. If
+                ``return_multipliers`` is ``True``, it returns
+                ``(ode_system, lambda_mult)``; if ``return_W`` is ``True``, it
+                returns ``(ode_system, W)``; and if both are ``True``, it returns
+                ``(ode_system, lambda_mult, W)``. The multiplier entries follow the
+                ordering of the constraint residuals in ``self.F``.
+            """
+        self._build_state_variables()
+        self._build_lagrangian()
+        self._build_constraints()
+        self._build_external_forces()
+        result = qv.lagrange_eom(self.lagrangian, self.F, self.q, self.qd, self.Q_nc, return_multipliers=return_multipliers, return_W=return_W, return_M=True, verbose=verbose)
+        # Save the symbolic mass matrix
+        self.mass_matrix = result[-1]
+        # Now return only the return values of build_lagrange_eom(), not the mass matrix
+        original_results = result[:-1]
+        if len(original_results) == 1:
+            return original_results[0]
+
+        return original_results
 
     def print_model(self):
         """Print a human-readable summary of the assembled model."""
