@@ -72,37 +72,41 @@ class bar:
         y0 = (start_y + end_y) / 2.0
 
         new_bar = cls(length, mass)
-        new_bar.set_init_bar_attitude(x0, y0, theta0)
+        new_bar.set_bar_attitude(x0, y0, theta0)
 
         return new_bar
 
-    def set_init_bar_attitude(self, x0, y0, theta0):
-        """Set the initial center position and angle of the bar.
+    def set_bar_attitude(self, x0, y0, theta0):
+        """Set the center position and angle of the bar.
 
         Args:
-            x0 (:class:`float`): Initial center x coordinate.
+            x0 (:class:`float`): Center x coordinate.
 
-            y0 (:class:`float`): Initial center y coordinate.
+            y0 (:class:`float`): Center y coordinate.
 
-            theta0 (:class:`float`): Initial orientation angle.
+            theta0 (:class:`float`): Orientation angle.
         """
         self.x0 = x0
         self.y0 = y0
         self.theta0 = theta0
 
-    def set_init_bar_velocities(self, xd0, yd0, thetad0):
-        """Set the initial translational and angular velocities of the bar.
+    set_init_bar_attitude = set_bar_attitude
+
+    def set_bar_velocities(self, xd0, yd0, thetad0):
+        """Set the translational and angular velocities of the bar.
 
         Args:
-            xd0 (:class:`float`): Initial x velocity of the center.
+            xd0 (:class:`float`): x velocity of the center.
 
-            yd0 (:class:`float`): Initial y velocity of the center.
+            yd0 (:class:`float`): y velocity of the center.
 
-            thetad0 (:class:`float`): Initial angular velocity.
+            thetad0 (:class:`float`): Angular velocity.
         """
         self.xd0 = xd0
         self.yd0 = yd0
         self.thetad0 = thetad0
+
+    set_init_bar_velocities = set_bar_velocities
 
 class joint:
     """Constraint tying multiple points on different bars to a common location.
@@ -218,10 +222,6 @@ class bar_joint_model:
                 checking constraint satisfaction. Default is ``1e-10``.
         """
         self.tolerance = tolerance 
-        self.clear()
-
-    def clear(self):
-        """Remove all bars, joints, supports, and forces from the model."""
         self.g = 0.0
         self.bars = []
         self.joints = []
@@ -236,21 +236,6 @@ class bar_joint_model:
         self.F = np.asarray([], dtype=object)
         self.Q_nc = np.asarray([], dtype=object)
 
-    def set_g(self, g):
-        """Set the gravitational acceleration for the model.
-
-        Args:
-            g (:class:`float`): Gravitational acceleration in the global y
-                direction.
-        """
-        self.g = float(g)
-
-    # def build_from_point_pairs(self, point_pairs):
-    #     self.clear()
-
-    #     for start, end in point_pairs:
-    #         self.add_bar_from_point_pair(start, end)
-
     def add_bar(self, length, mass):
         """Append a new bar to the assembly.
 
@@ -260,34 +245,6 @@ class bar_joint_model:
             mass (:class:`float` or :class:`heyoka.expression`): Bar mass.
         """
         self.bars.append(bar(length, mass))
-
-    def set_init_bar_attitude(self, bar_index, x0, y0, theta0):
-        """Set the initial center position and orientation of a bar.
-
-        Args:
-            bar_index (:class:`int`): Index of the target bar.
-
-            x0 (:class:`float`): Initial x coordinate of the bar center.
-
-            y0 (:class:`float`): Initial y coordinate of the bar center.
-
-            theta0 (:class:`float`): Initial angle of the bar.
-        """
-        self.bars[bar_index].set_init_bar_attitude(x0, y0, theta0)
-
-    def set_init_bar_velocities(self, bar_index, xd0, yd0, thetad0):
-        """Set the initial translational and angular velocities of a bar.
-
-        Args:
-            bar_index (:class:`int`): Index of the target bar.
-
-            xd0 (:class:`float`): Initial x velocity of the center.
-
-            yd0 (:class:`float`): Initial y velocity of the center.
-
-            thetad0 (:class:`float`): Initial angular velocity.
-        """
-        self.bars[bar_index].set_init_bar_velocities(xd0, yd0, thetad0)
 
     def add_bar_at_attitude(self, x0, y0, theta0, length, mass):
         """Append a bar and assign its initial attitude in one step.
@@ -304,7 +261,39 @@ class bar_joint_model:
             mass (:class:`float` or :class:`heyoka.expression`): Bar mass.
         """
         self.add_bar(length, mass)
-        self.set_init_bar_attitude(-1, x0, y0, theta0)
+        self.set_bar_attitude(-1, x0, y0, theta0)
+
+    def set_bar_attitude(self, bar_index, x0, y0, theta0):
+        """Set the center position and orientation of a bar.
+
+        Args:
+            bar_index (:class:`int`): Index of the target bar.
+
+            x0 (:class:`float`): x coordinate of the bar center.
+
+            y0 (:class:`float`): y coordinate of the bar center.
+
+            theta0 (:class:`float`): Angle of the bar.
+        """
+        self.bars[bar_index].set_bar_attitude(x0, y0, theta0)
+
+    set_init_bar_attitude = set_bar_attitude
+
+    def set_bar_velocities(self, bar_index, xd0, yd0, thetad0):
+        """Set the translational and angular velocities of a bar.
+
+        Args:
+            bar_index (:class:`int`): Index of the target bar.
+
+            xd0 (:class:`float`): x velocity of the center.
+
+            yd0 (:class:`float`): y velocity of the center.
+
+            thetad0 (:class:`float`): Angular velocity.
+        """
+        self.bars[bar_index].set_bar_velocities(xd0, yd0, thetad0)
+
+    set_init_bar_velocities = set_bar_velocities
 
     def add_bar_from_point_pair(self, start, end, mass_per_length=1.0):
         """Append a bar constructed from its endpoints.
@@ -598,20 +587,20 @@ class bar_joint_model:
 
         return original_results
 
-    def set_initial_state(self, initial_state):
+    def set_state(self, state):
         """Set bar poses and velocities from a flattened or per-bar state.
 
         Args:
-            initial_state (:class:`list` or :class:`numpy.ndarray`): Either a
-                flattened state ordered as in :meth:`get_initial_state`, or a
+            state (:class:`list` or :class:`numpy.ndarray`): Either a flattened
+                state ordered as in :meth:`get_state`, or a
                 sequence with one six-value state
                 ``[x0, y0, theta0, xd0, yd0, thetad0]`` per bar.
 
         Raises:
-            ValueError: If the input shape is invalid or the assigned initial
-                state violates a position or velocity constraint.
+            ValueError: If the input shape is invalid or the assigned state
+                violates a position or velocity constraint.
         """
-        flat_state = np.asarray(initial_state, dtype=float).ravel()
+        flat_state = np.asarray(state, dtype=float).ravel()
 
         if flat_state.size == 6 * len(self.bars):
             q_size = 3 * len(self.bars)
@@ -628,16 +617,16 @@ class bar_joint_model:
                 self.bars[i].xd0 = float(xd0)
                 self.bars[i].yd0 = float(yd0)
                 self.bars[i].thetad0 = float(thetad0)
-            if not self.check_constraint_fulfillment(self.get_initial_state()):
-                raise ValueError("Initial state violates position or velocity constraints")
+            if not self.check_constraint_fulfillment(self.get_state()):
+                raise ValueError("State violates position or velocity constraints")
             return
 
-        if len(initial_state) == len(self.bars):
-            for i, state in enumerate(initial_state):
-                state_array = np.asarray(state, dtype=float).ravel()
+        if len(state) == len(self.bars):
+            for i, bar_state in enumerate(state):
+                state_array = np.asarray(bar_state, dtype=float).ravel()
                 if state_array.size != 6:
                     raise ValueError(
-                        f"Initial state for bar {i} must contain [x0, y0, theta0, xd0, yd0, thetad0]"
+                        f"State for bar {i} must contain [x0, y0, theta0, xd0, yd0, thetad0]"
                     )
 
                 x0, y0, theta0, xd0, yd0, thetad0 = state_array
@@ -649,16 +638,20 @@ class bar_joint_model:
                 self.bars[i].yd0 = float(yd0)
                 self.bars[i].thetad0 = float(thetad0)
 
-            if not self.check_constraint_fulfillment(self.get_initial_state()):
-                raise ValueError("Initial state violates position or velocity constraints")
+            if not self.check_constraint_fulfillment(self.get_state()):
+                raise ValueError("State violates position or velocity constraints")
             return
 
         raise ValueError(
-            f"Expected state length {6 * len(self.bars)}, got {len(initial_state)}"
+            f"Expected state length {6 * len(self.bars)}, got {len(state)}"
         )
 
-    def get_initial_state(self):
-        """Return the stacked initial generalized coordinates and velocities.
+    def set_initial_state(self, initial_state):
+        """Set the state using the legacy method name."""
+        return self.set_state(initial_state)
+
+    def get_state(self):
+        """Return the stacked generalized coordinates and velocities.
 
         Returns:
             list: State vector containing ``[x0, y0, theta0, xd0, yd0, thetad0]``
@@ -673,6 +666,8 @@ class bar_joint_model:
             qd0.extend([bar.xd0, bar.yd0, bar.thetad0])
         return q0 + qd0
 
+    get_initial_state = get_state
+
     def check_constraint_fulfillment(self, state, pars=None, verbose=False):
         """Check position and velocity constraints for a state.
 
@@ -685,7 +680,7 @@ class bar_joint_model:
         Args:
             state (:class:`list` or :class:`numpy.ndarray`): Coordinates followed
                 by velocities, in the ordering returned by
-                :meth:`get_initial_state`.
+                :meth:`get_state`.
 
             pars (:class:`list` or :class:`numpy.ndarray`, optional): Values for
                 Heyoka parameters appearing in the constraints. Default is
@@ -761,7 +756,7 @@ class bar_joint_model:
 
         Args:
             state (:class:`numpy.ndarray`): Coordinates followed by velocities,
-                in the ordering returned by :meth:`get_initial_state`.
+                in the ordering returned by :meth:`get_state`.
 
             pars (:class:`list` or :class:`numpy.ndarray`, optional): Values for
                 Heyoka parameters appearing in the constraints or bar lengths.
@@ -803,7 +798,7 @@ class bar_joint_model:
 
         if not self.bars or len(self.q) != nq or self.lagrangian is None:
             raise ValueError("Build the model before calling fix_state")
-
+        
         q_initial = state[:nq]
         qdot_initial = state[nq:]
 
