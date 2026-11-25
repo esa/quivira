@@ -24,3 +24,5 @@ Advanced
    
    notebooks/scissor_mechanism
    notebooks/fix_a_state
+   notebooks/totimorphic_cell
+   notebooks/totimorphic_lattice

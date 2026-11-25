@@ -232,32 +232,17 @@ class bar_joint_model:
         self.F = np.asarray([], dtype=object)
         self.Q_nc = np.asarray([], dtype=object)
 
-    def add_bar(self, length, mass):
+    def add_bar(self, length, mass_per_length):
         """Append a new bar to the assembly.
 
         Args:
             length (:class:`float` or :class:`heyoka.expression`): Bar length.
 
-            mass (:class:`float` or :class:`heyoka.expression`): Bar mass.
+            mass_per_length (:class:`float` or :class:`heyoka.expression`):
+                Mass per unit length.
         """
+        mass = mass_per_length * length
         self.bars.append(bar(length, mass))
-
-    def add_bar_at_attitude(self, x0, y0, theta0, length, mass):
-        """Append a bar and assign its initial attitude in one step.
-
-        Args:
-            x0 (:class:`float`): Initial x coordinate of the bar center.
-
-            y0 (:class:`float`): Initial y coordinate of the bar center.
-
-            theta0 (:class:`float`): Initial angle of the bar.
-
-            length (:class:`float` or :class:`heyoka.expression`): Bar length.
-
-            mass (:class:`float` or :class:`heyoka.expression`): Bar mass.
-        """
-        self.add_bar(length, mass)
-        self.set_bar_pose(-1, x0, y0, theta0)
 
     def add_bar_from_point_pair(self, start, end, mass_per_length=1.0):
         """Append a bar constructed from its endpoints.
