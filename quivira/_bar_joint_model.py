@@ -927,26 +927,27 @@ class bar_joint_model:
 
         return original_results
 
-    def print_model(self):
-        """Print a human-readable summary of the assembled model."""
-        print("Bars:")
+# Human-readable model summary
+    def __repr__(self):
+        """Return a human-readable summary of the assembled model."""
+        lines = ["Bars:"]
         for i, bar in enumerate(self.bars):
-            print(f"  Bar {i}: length={bar.length}, mass={bar.mass}")
+            lines.append(f"  Bar {i}: length={bar.length}, mass={bar.mass}")
 
-        print("\nJoints:")
+        lines.append("\nJoints:")
         if len(self.joints) == 0:
-            print("  None")
+            lines.append("  None")
         else:
             for i, joint in enumerate(self.joints):
                 connections = [f"bar {bar_index} at s={s}" for bar_index, s in zip(joint.bar_index, joint.s)]
-                print(f"  Joint {i}: " + ", ".join(connections))
+                lines.append(f"  Joint {i}: " + ", ".join(connections))
 
-        print("\nSupports:")
+        lines.append("\nSupports:")
         if len(self.supports) == 0:
-            print("  None")
+            lines.append("  None")
         else:
             for i, support in enumerate(self.supports):
-                print(
+                lines.append(
                     f"  Support {i}: "
                     f"bar {support.bar_index} at s={support.s}, "
                     f"position=({support.x}, {support.y}), "
@@ -954,17 +955,20 @@ class bar_joint_model:
                     f"dof_in_y={support.dof_in_y}"
                 )
 
-        print("\nInitial state:")
+        lines.append("\nInitial state:")
         for i, bar in enumerate(self.bars):
             if bar.x0 is None or bar.y0 is None or bar.theta0 is None:
-                print(f"  Bar {i}: Not set")
+                lines.append(f"  Bar {i}: Not set")
             else:
-                print(
+                lines.append(
                     f"  Bar {i}: "
                     f"x={bar.x0}, y={bar.y0}, theta={bar.theta0}, "
                     f"xd={bar.xd0}, yd={bar.yd0}, thetad={bar.thetad0}"
                 )
-        
+
+        return "\n".join(lines)
+
+# Private methods for internal use within the model
     def _build_state_variables(self):
         q_names = []
         qd_names = []
